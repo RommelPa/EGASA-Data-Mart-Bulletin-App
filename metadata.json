@@ -1,0 +1,5 @@
+{
+  "name": "EGASA Data Mart & Bulletin App",
+  "description": "Un sistema ETL robusto y trazable para EGASA con visualización en Streamlit, procesando datos de generación, hidrología y facturación desde archivos Excel locales.",
+  "requestFramePermissions": []
+}
