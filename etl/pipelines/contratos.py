@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 def _load_sheet(path: Path, target: str) -> pd.DataFrame:
     try:
         xls = pd.ExcelFile(path)
-    except Exception as exc:
-        logger.warning("No se pudo abrir %s: %s", path, exc)
-        return pd.DataFrame()
+    except Exception:
+        logger.exception("No se pudo abrir %s", path)
+        raise
 
     for sheet in xls.sheet_names:
         if target.lower() in sheet.lower():
@@ -30,16 +30,48 @@ def _load_sheet(path: Path, target: str) -> pd.DataFrame:
 
 
 def _clean_contracts(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.dropna(how="all")
     if df.empty:
-        return pd.DataFrame(columns=["cliente", "tipo", "fecha_inicio", "fecha_fin", "energia_mwh", "precio"])
+        return pd.DataFrame(columns=["cliente", "tipo_contrato", "fecha_inicio", "fecha_fin", "potencia_mw", "precio_hp_usd_mwh", "precio_fp_usd_mwh"])
     df = df.rename(columns=str.lower)
-    for col in ["fecha_inicio", "fecha_fin"]:
+    mapping = {
+        "nombre del cliente": "cliente",
+        "tipo contrato": "tipo_contrato",
+        "vigencia inicio": "fecha_inicio",
+        "vigencia final": "fecha_fin",
+        "potencia total (mw)": "potencia_mw",
+        "precio energia hp (usd/mwh)": "precio_hp_usd_mwh",
+        "precio energia fp (usd/mwh)": "precio_fp_usd_mwh",
+    }
+    df = df.rename(columns=mapping)
+    for col in ["fecha_inicio", "fecha_fin", "vigencia inicio", "vigencia final"]:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
-    for col in df.columns:
-        if "mwh" in col or "energia" in col:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
+    def _series(name: str) -> pd.Series:
+        s = df.get(name)
+        if s is None:
+            s = pd.Series([None] * len(df))
+        return s
+
+    fecha_inicio_series = _series("fecha_inicio")
+    if fecha_inicio_series.isna().all():
+        fecha_inicio_series = _series("vigencia inicio")
+    fecha_fin_series = _series("fecha_fin")
+    if fecha_fin_series.isna().all():
+        fecha_fin_series = _series("vigencia final")
+
+    df_out = pd.DataFrame(
+        {
+            "cliente": _series("cliente"),
+            "tipo_contrato": _series("tipo_contrato"),
+            "fecha_inicio": fecha_inicio_series,
+            "fecha_fin": fecha_fin_series,
+            "potencia_mw": pd.to_numeric(_series("potencia_mw"), errors="coerce"),
+            "precio_hp_usd_mwh": pd.to_numeric(_series("precio_hp_usd_mwh"), errors="coerce"),
+            "precio_fp_usd_mwh": pd.to_numeric(_series("precio_fp_usd_mwh"), errors="coerce"),
+        }
+    )
+    return df_out.dropna(how="all")
 
 
 def run_contratos() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[str]]]]:
@@ -55,8 +87,12 @@ def run_contratos() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[
     if contrato_files:
         path = contrato_files[0]
         files_read.append(path)
-        base_df = _clean_contracts(_load_sheet(path, "CONTRATOS BASE DATOS"))
-        riesgo_df = _clean_contracts(_load_sheet(path, "RIESGO"))
+        try:
+            base_df = _clean_contracts(_load_sheet(path, "CONTRATOS BASE DATOS"))
+            riesgo_df = _clean_contracts(_load_sheet(path, "RIESGO"))
+        except Exception:
+            logger.exception("Error procesando contratos en %s", path)
+            raise
 
     safe_write_csv(base_df, DATA_MART / OUTPUT_FILES["contratos_base"])
     datasets["contratos_base"] = (base_df, ["cliente", "fecha_inicio"])
