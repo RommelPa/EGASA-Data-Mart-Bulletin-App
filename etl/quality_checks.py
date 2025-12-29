@@ -46,6 +46,39 @@ def check_basic_issues(df: pd.DataFrame, key_columns: Iterable[str]) -> List[str
     return alerts
 
 
+def _date_bounds(df: pd.DataFrame) -> Tuple[str | None, str | None]:
+    date_cols = [c for c in df.columns if "fecha" in c or "periodo" in c]
+    if not date_cols:
+        return None, None
+    min_ts = None
+    max_ts = None
+    for col in date_cols:
+        series = df[col]
+        if pd.api.types.is_datetime64_any_dtype(series):
+            current_min = series.min()
+            current_max = series.max()
+        else:
+            parsed = pd.to_datetime(series, errors="coerce")
+            current_min = parsed.min()
+            current_max = parsed.max()
+        if pd.notna(current_min):
+            min_ts = min_ts if min_ts is not None and min_ts < current_min else current_min
+        if pd.notna(current_max):
+            max_ts = max_ts if max_ts is not None and max_ts > current_max else current_max
+    min_str = min_ts.isoformat() if pd.notna(min_ts) else None
+    max_str = max_ts.isoformat() if pd.notna(max_ts) else None
+    return min_str, max_str
+
+
+def _quality_counters(df: pd.DataFrame) -> Dict[str, int]:
+    counters: Dict[str, int] = {}
+    if "central_id" in df.columns:
+        counters["centrales_no_mapeadas"] = int(df["central_id"].isna().sum())
+    if "cliente" in df.columns:
+        counters["clientes_vacios"] = int(df["cliente"].isna().sum() + (df["cliente"].astype(str).str.strip() == "").sum())
+    return counters
+
+
 def write_metadata(
     path: Path | None,
     datasets_info: Dict[str, Tuple[pd.DataFrame, Iterable[str]]],
@@ -68,10 +101,16 @@ def write_metadata(
     }
 
     for name, (df, keys) in datasets_info.items():
-        payload["datasets"][name] = {
+        min_fecha, max_fecha = _date_bounds(df)
+        meta = {
             "filas": int(len(df)),
             "alertas": check_basic_issues(df, keys),
         }
+        if min_fecha or max_fecha:
+            meta["fecha_min"] = min_fecha
+            meta["fecha_max"] = max_fecha
+        meta.update(_quality_counters(df))
+        payload["datasets"][name] = meta
 
     with metadata_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)

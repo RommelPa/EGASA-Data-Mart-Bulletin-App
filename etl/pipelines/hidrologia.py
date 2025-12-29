@@ -11,46 +11,83 @@ from typing import Dict, Iterable, List, Tuple
 import pandas as pd
 
 from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES
-from ..utils_io import list_matching_files, read_excel_safe, safe_write_csv
+from ..utils_io import detect_header_row, list_matching_files, read_excel_safe, safe_write_csv
 
 logger = logging.getLogger(__name__)
+
+
+MONTH_MAP = {
+    "ENERO": "01",
+    "FEBRERO": "02",
+    "MARZO": "03",
+    "ABRIL": "04",
+    "MAYO": "05",
+    "JUNIO": "06",
+    "JULIO": "07",
+    "AGOSTO": "08",
+    "SETIEMBRE": "09",
+    "SEPTIEMBRE": "09",
+    "OCTUBRE": "10",
+    "NOVIEMBRE": "11",
+    "DICIEMBRE": "12",
+}
+
+
+def _melt_monthly(df: pd.DataFrame, id_var: str, value_name: str) -> pd.DataFrame:
+    month_cols = [c for c in df.columns if any(m in str(c).upper() for m in MONTH_MAP)]
+    df_out = df.melt(id_vars=[id_var], value_vars=month_cols, var_name="mes_raw", value_name=value_name)
+    df_out[id_var] = pd.to_numeric(df_out[id_var], errors="coerce")
+    df_out["mes_raw"] = df_out["mes_raw"].astype(str).str.upper().str.strip()
+    df_out["mes"] = df_out["mes_raw"].map(MONTH_MAP)
+    df_out = df_out.dropna(subset=["mes", id_var])
+    df_out[value_name] = pd.to_numeric(df_out[value_name], errors="coerce")
+    return df_out
 
 
 def _procesar_control(path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Procesar archivo Control Hidrológico."""
 
-    volumen_df = pd.DataFrame(columns=["reservorio", "periodo", "volumen_000m3"])
-    caudal_df = pd.DataFrame(columns=["estacion", "periodo", "caudal_m3s"])
+    volumen_df = pd.DataFrame(columns=["reservorio", "anio", "mes", "volumen_000m3"])
+    caudal_df = pd.DataFrame(columns=["estacion", "anio", "mes", "caudal_m3s"])
 
     try:
         xls = pd.ExcelFile(path)
-    except Exception as exc:
-        logger.warning("No se pudo leer %s: %s", path, exc)
-        return volumen_df, caudal_df
+    except Exception:
+        logger.exception("No se pudo leer %s", path)
+        raise
 
-    # Volúmenes: primera hoja
-    if xls.sheet_names:
-        vol_sheet = xls.sheet_names[0]
-        df_vol = read_excel_safe(path, sheet_name=vol_sheet, expected_columns=["reservorio"])
-        if not df_vol.empty:
-            first_col = df_vol.columns[0]
-            df_vol = df_vol.rename(columns={first_col: "reservorio"})
-            month_cols = [c for c in df_vol.columns if c != "reservorio"]
-            df_vol = df_vol.melt(id_vars=["reservorio"], value_vars=month_cols, var_name="periodo", value_name="volumen_000m3")
-            df_vol["volumen_000m3"] = pd.to_numeric(df_vol["volumen_000m3"], errors="coerce")
-            volumen_df = df_vol.dropna(subset=["reservorio"])
+    volumen_sheets = ["AB", "EF", "EP", "PI", "CH", "BA", "TOTAL"]
+    vol_frames: List[pd.DataFrame] = []
+    for sheet in xls.sheet_names:
+        if sheet.upper() not in {s.upper() for s in volumen_sheets}:
+            continue
+        preview = pd.read_excel(path, sheet_name=sheet, header=None, nrows=40)
+        header_row = detect_header_row(preview, keywords=["año", "enero"])
+        df_vol = pd.read_excel(path, sheet_name=sheet, header=header_row)
+        if df_vol.empty:
+            logger.warning("Hoja %s sin datos en control hidrológico", sheet)
+            continue
+        anio_col = next((c for c in df_vol.columns if str(c).upper().startswith("AÑO")), df_vol.columns[0])
+        df_vol = df_vol.rename(columns={anio_col: "anio"})
+        df_vol = _melt_monthly(df_vol, id_var="anio", value_name="volumen_000m3")
+        df_vol["reservorio"] = sheet.upper()
+        vol_frames.append(df_vol[["reservorio", "anio", "mes", "volumen_000m3"]])
 
-    # Caudal: hoja CAUDAL si existe
+    if vol_frames:
+        volumen_df = pd.concat(vol_frames, ignore_index=True)
+
     if "CAUDAL" in [s.upper() for s in xls.sheet_names]:
         sheet = [s for s in xls.sheet_names if s.upper() == "CAUDAL"][0]
-        df_cau = read_excel_safe(path, sheet_name=sheet, expected_columns=["periodo"])
-        if not df_cau.empty:
-            first_col = df_cau.columns[0]
-            df_cau = df_cau.rename(columns={first_col: "estacion"})
-            month_cols = [c for c in df_cau.columns if c != "estacion"]
-            df_cau = df_cau.melt(id_vars=["estacion"], value_vars=month_cols, var_name="periodo", value_name="caudal_m3s")
-            df_cau["caudal_m3s"] = pd.to_numeric(df_cau["caudal_m3s"], errors="coerce")
-            caudal_df = df_cau.dropna(subset=["estacion"])
+        preview = pd.read_excel(path, sheet_name=sheet, header=None, nrows=40)
+        header_row = detect_header_row(preview, keywords=["año", "enero"])
+        df_cau = pd.read_excel(path, sheet_name=sheet, header=header_row)
+        if "AÑO" not in df_cau.columns:
+            logger.warning("Hoja CAUDAL sin columna AÑO")
+        else:
+            df_cau = df_cau.rename(columns={"AÑO": "anio"})
+            df_cau = _melt_monthly(df_cau, id_var="anio", value_name="caudal_m3s")
+            df_cau["estacion"] = "Aguada Blanca"
+            caudal_df = df_cau[["estacion", "anio", "mes", "caudal_m3s"]]
 
     return volumen_df, caudal_df
 
@@ -58,26 +95,52 @@ def _procesar_control(path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
 def _procesar_represas(path: Path) -> pd.DataFrame:
     """Procesar archivo BDREPRESAS."""
 
-    df = read_excel_safe(path, sheet_name="INFORMEDIARIO", expected_columns=["FECHA"])
-    if df.empty:
-        df = read_excel_safe(path, expected_columns=["FECHA"])
-    if df.empty:
-        return pd.DataFrame(columns=["fecha", "reservorio", "nivel", "caudal", "volumen"])
+    try:
+        preview = pd.read_excel(path, sheet_name="INFORMEDIARIO", header=None, nrows=80)
+    except Exception:
+        logger.exception("No se pudo abrir hoja INFORMEDIARIO en %s", path)
+        raise
 
-    if "FECHA" not in df.columns:
-        df.rename(columns={df.columns[0]: "FECHA"}, inplace=True)
+    header_row = None
+    for idx, row in preview.iterrows():
+        vals = [str(v).upper() for v in row if pd.notna(v)]
+        if "REPRESA" in vals and any("CAPACIDAD" in v for v in vals):
+            header_row = idx
+            break
+    if header_row is None:
+        header_row = detect_header_row(preview, keywords=["represa"])
+    df = pd.read_excel(path, sheet_name="INFORMEDIARIO", header=header_row)
+    df = df.rename(columns=lambda c: str(c).strip())
 
-    df_out = pd.DataFrame(
-        {
-            "fecha": pd.to_datetime(df["FECHA"], errors="coerce"),
-            "reservorio": df.get("RESERVORIO", df.get("NOMBRE", "DESCONOCIDO")),
-            "nivel": pd.to_numeric(df.get("NIVEL"), errors="coerce"),
-            "caudal": pd.to_numeric(df.get("CAUDAL"), errors="coerce"),
-            "volumen": pd.to_numeric(df.get("VOLUMEN"), errors="coerce"),
-        }
-    )
-    df_out = df_out.dropna(subset=["fecha"])
-    return df_out
+    # Buscar fecha en columnas o en texto
+    fecha_cols = [c for c in df.columns if isinstance(c, str) and any(ch.isdigit() for ch in c)]
+    fecha_val = None
+    for col in fecha_cols:
+        if "20" in str(col):
+            parts = str(col).replace(".", "-").replace("/", "-").split("-")
+            if len(parts) >= 3:
+                try:
+                    year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                    fecha_val = pd.Timestamp(year=year, month=month, day=day)
+                    break
+                except Exception:
+                    continue
+
+    reservorio_col = next((c for c in df.columns if "REPRESA" in str(c).upper()), None)
+    if not reservorio_col:
+        logger.warning("No se pudo identificar columna de represa en INFORMEDIARIO")
+        return pd.DataFrame(columns=["fecha", "reservorio"])
+
+    df = df.rename(columns={reservorio_col: "reservorio"})
+    keep_cols = ["reservorio"] + [c for c in df.columns if c not in {"reservorio", "Unnamed: 0"}]
+    df_out = df[keep_cols].copy()
+    df_out = df_out.dropna(subset=["reservorio"])
+    df_out["fecha"] = fecha_val
+    numeric_cols = [c for c in df_out.columns if c not in {"reservorio", "fecha"}]
+    for col in numeric_cols:
+        df_out[col] = pd.to_numeric(df_out[col], errors="coerce")
+    cols_order = ["fecha", "reservorio"] + numeric_cols
+    return df_out[cols_order]
 
 
 def run_hidrologia() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[str]]]]:
@@ -87,11 +150,20 @@ def run_hidrologia() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable
     datasets: Dict[str, Tuple[pd.DataFrame, Iterable[str]]] = {}
 
     control_files = list_matching_files(DATA_LANDING, LANDING_FILES["hidrologia_control"])
-    volumen_df = pd.DataFrame(columns=["reservorio", "periodo", "volumen_000m3"])
-    caudal_df = pd.DataFrame(columns=["estacion", "periodo", "caudal_m3s"])
+    volumen_df = pd.DataFrame(columns=["reservorio", "anio", "mes", "volumen_000m3"])
+    caudal_df = pd.DataFrame(columns=["estacion", "anio", "mes", "caudal_m3s"])
     if control_files:
-        volumen_df, caudal_df = _procesar_control(control_files[0])
+        try:
+            volumen_df, caudal_df = _procesar_control(control_files[0])
+        except Exception:
+            logger.exception("Error procesando control hidrológico %s", control_files[0])
+            raise
         files_read.append(control_files[0])
+
+    if not volumen_df.empty:
+        volumen_df["periodo"] = volumen_df["anio"].astype(int).astype(str) + volumen_df["mes"]
+    if not caudal_df.empty:
+        caudal_df["periodo"] = caudal_df["anio"].astype(int).astype(str) + caudal_df["mes"]
 
     safe_write_csv(volumen_df, DATA_MART / OUTPUT_FILES["hidro_volumen_mensual"])
     safe_write_csv(caudal_df, DATA_MART / OUTPUT_FILES["hidro_caudal_mensual"])
@@ -101,7 +173,11 @@ def run_hidrologia() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable
     represas_files = list_matching_files(DATA_LANDING, LANDING_FILES["hidrologia_represas"])
     represas_df = pd.DataFrame(columns=["fecha", "reservorio", "nivel", "caudal", "volumen"])
     if represas_files:
-        represas_df = _procesar_represas(represas_files[0])
+        try:
+            represas_df = _procesar_represas(represas_files[0])
+        except Exception:
+            logger.exception("Error procesando represas %s", represas_files[0])
+            raise
         files_read.append(represas_files[0])
 
     safe_write_csv(represas_df, DATA_MART / OUTPUT_FILES["represas_diario"])

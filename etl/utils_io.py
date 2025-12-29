@@ -59,14 +59,16 @@ def read_excel_safe(
         logger.warning("Archivo no encontrado: %s", path)
         return pd.DataFrame()
 
-    # Leer una vista previa para detectar header
-    preview = pd.read_excel(path, sheet_name=sheet_name, nrows=20, header=None)
-    header_row = 0
-    if expected_columns or header_keywords:
-        header_row = detect_header_row(preview, expected_columns, header_keywords)
-
-    df = pd.read_excel(path, sheet_name=sheet_name, header=header_row, **kwargs)
-    return df
+    try:
+        preview = pd.read_excel(path, sheet_name=sheet_name, nrows=30, header=None)
+        header_row = 0
+        if expected_columns or header_keywords:
+            header_row = detect_header_row(preview, expected_columns, header_keywords)
+        df = pd.read_excel(path, sheet_name=sheet_name, header=header_row, **kwargs)
+        return df
+    except Exception:
+        logger.exception("Error leyendo Excel %s sheet=%s", path, sheet_name)
+        raise
 
 
 def list_matching_files(base_dir: Path, pattern: str) -> List[Path]:

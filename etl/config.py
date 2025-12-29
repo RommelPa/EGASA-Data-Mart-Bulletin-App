@@ -23,7 +23,7 @@ LANDING_FILES: Dict[str, str] = {
     "hidrologia_control": "Control Hidrológico.xlsx",
     "hidrologia_represas": "BDREPRESAS.xlsx",
     "facturacion": "Facturacion",
-    "contratos": "CONTRATOS BASE DATOS (egasa)",
+    "contratos": "Revision de Volumen Optimo",
 }
 
 # Archivos de salida

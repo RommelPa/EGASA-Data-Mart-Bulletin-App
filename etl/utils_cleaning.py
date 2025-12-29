@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Dict
 
@@ -20,7 +21,8 @@ def normalize_text(value: str) -> str:
     """Normalizar texto para comparaciones."""
 
     value = unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode()
-    return value.strip().upper()
+    value = "".join(ch if ch.isalnum() else " " for ch in value)
+    return " ".join(value.upper().split())
 
 
 def load_centrales_reference(path: Path | None = None) -> pd.DataFrame:
@@ -45,8 +47,23 @@ def map_central_id(df: pd.DataFrame, centrales_df: pd.DataFrame, source_col: str
     centrales_map: Dict[str, str] = dict(
         zip(centrales_df["central_nombre_norm"], centrales_df["central_id"])
     )
+    known_names = list(centrales_map.keys())
+
+    cache: Dict[str, str | None] = {}
+
+    def _match(name: str) -> str | None:
+        if name in cache:
+            return cache[name]
+        direct = centrales_map.get(name)
+        if direct:
+            cache[name] = direct
+            return direct
+        closest = get_close_matches(name, known_names, n=1, cutoff=0.6)
+        cache[name] = centrales_map.get(closest[0]) if closest else None
+        return cache[name]
+
     df["central_nombre_norm"] = df[source_col].astype(str).map(normalize_text)
-    df["central_id"] = df["central_nombre_norm"].map(centrales_map)
+    df["central_id"] = df["central_nombre_norm"].map(_match)
     df = df.drop(columns=["central_nombre_norm"])
     return df
 
