@@ -88,6 +88,33 @@ def _extract_year_from_filename(path: Path) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _aggregate_sales(df: pd.DataFrame, value_name: str) -> pd.DataFrame:
+    """Agrupar ventas por periodo (anio/mes) y cliente."""
+
+    if df.empty:
+        return pd.DataFrame(columns=["cliente", "periodo", "anio", "mes", value_name])
+
+    df_clean = df.copy()
+    df_clean[value_name] = pd.to_numeric(df_clean[value_name], errors="coerce")
+    df_clean = df_clean.dropna(subset=["periodo", "cliente", value_name])
+    df_clean["periodo"] = df_clean["periodo"].astype(str).str.strip()
+    df_clean = df_clean[df_clean["periodo"].str.len() == 6]
+    df_clean["anio"] = pd.to_numeric(df_clean["periodo"].str[:4], errors="coerce").astype("Int64")
+    df_clean["mes"] = pd.to_numeric(df_clean["periodo"].str[4:6], errors="coerce").astype("Int64")
+    df_clean = df_clean.dropna(subset=["anio", "mes"])
+    df_clean["anio"] = df_clean["anio"].astype(int)
+    df_clean["mes"] = df_clean["mes"].astype(int)
+    df_clean["cliente"] = df_clean["cliente"].astype(str).str.strip()
+    df_clean = df_clean[df_clean["cliente"] != ""]
+
+    grouped = (
+        df_clean.groupby(["anio", "mes", "cliente"], as_index=False)[value_name]
+        .sum()
+        .assign(periodo=lambda d: d.apply(lambda row: f"{int(row['anio'])}{int(row['mes']):02d}", axis=1))
+    )
+    return grouped[["cliente", "periodo", "anio", "mes", value_name]]
+
+
 def _parse_sales(df: pd.DataFrame, value_name: str) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["cliente", "periodo", value_name])
@@ -154,7 +181,17 @@ def _parse_ingresos(df: pd.DataFrame, year: int | None) -> pd.DataFrame:
     df_long = df_long.dropna(subset=["cliente_o_concepto", "mes", "anio"])
     df_long["mes"] = df_long["mes"].astype(int)
 
-    return df_long[["anio", "mes", "cliente_o_concepto", "soles"]]
+    df_long["cliente_o_concepto_lower"] = df_long["cliente_o_concepto"].str.lower()
+    df_long = df_long[df_long["cliente_o_concepto"] != ""]
+    df_long = df_long[~df_long["cliente_o_concepto_lower"].isin({"nan", "none"})]
+    df_long = df_long[~df_long["cliente_o_concepto"].str.contains("TOTAL", case=False, na=False)]
+    df_long = df_long[~df_long["cliente_o_concepto"].str.contains("INGRESOS", case=False, na=False)]
+    df_long = df_long.dropna(subset=["soles"])
+    df_grouped = (
+        df_long.groupby(["anio", "mes", "cliente_o_concepto"], as_index=False)["soles"].sum()
+    )
+
+    return df_grouped[["anio", "mes", "cliente_o_concepto", "soles"]]
 
 
 def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[str]]]]:
@@ -167,7 +204,7 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
     ventas_mwh = pd.DataFrame(columns=["cliente", "periodo", "mwh"])
     ventas_soles = pd.DataFrame(columns=["cliente", "periodo", "soles"])
     ingresos = pd.DataFrame(columns=["anio", "mes", "cliente_o_concepto", "soles"])
-    precio_medio = pd.DataFrame(columns=["periodo", "precio_medio_soles_mwh"])
+    precio_medio = pd.DataFrame(columns=["periodo", "anio", "mes", "cliente", "precio_medio_soles_mwh"])
 
     if fact_files:
         path = fact_files[0]
@@ -198,13 +235,19 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
             raise
 
     # Calcular precio medio
-    if not ventas_mwh.empty and not ventas_soles.empty:
-        merged = ventas_mwh.merge(ventas_soles, on=["cliente", "periodo"], how="outer")
+    ventas_mwh_agg = _aggregate_sales(ventas_mwh, "mwh")
+    ventas_soles_agg = _aggregate_sales(ventas_soles, "soles")
+    if not ventas_mwh_agg.empty or not ventas_soles_agg.empty:
+        merged = ventas_mwh_agg.merge(
+            ventas_soles_agg, on=["anio", "mes", "cliente", "periodo"], how="outer"
+        )
         merged["precio_medio_soles_mwh"] = merged.apply(
             lambda row: row["soles"] / row["mwh"] if pd.notna(row["mwh"]) and row["mwh"] else None,
             axis=1,
         )
-        precio_medio = merged[["periodo", "precio_medio_soles_mwh"]].dropna(subset=["periodo"])
+        precio_medio = merged.dropna(subset=["periodo"]).drop_duplicates(
+            subset=["anio", "mes", "cliente"]
+        )[["periodo", "anio", "mes", "cliente", "precio_medio_soles_mwh"]]
 
     safe_write_csv(ventas_mwh, DATA_MART / OUTPUT_FILES["ventas_mensual_mwh"])
     safe_write_csv(ventas_soles, DATA_MART / OUTPUT_FILES["ventas_mensual_soles"])
@@ -214,7 +257,7 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
     datasets["ventas_mensual_mwh"] = (ventas_mwh, ["cliente", "periodo"])
     datasets["ventas_mensual_soles"] = (ventas_soles, ["cliente", "periodo"])
     datasets["ingresos_mensual"] = (ingresos, ["anio", "mes", "cliente_o_concepto"])
-    datasets["precio_medio_mensual"] = (precio_medio, ["periodo"])
+    datasets["precio_medio_mensual"] = (precio_medio, ["periodo", "cliente"])
 
     return files_read, datasets
 
