@@ -1,0 +1,242 @@
+{
+  "fecha_ejecucion": "2025-12-29T20:17:05.665358",
+  "archivos_leidos": [
+    {
+      "nombre": "centrales_egasa.csv",
+      "modified_time": 1767027446.2787523,
+      "size": 407
+    },
+    {
+      "nombre": "PRODUCCION EGASA DESDE 2010 (NOV2025).xlsx",
+      "modified_time": 1766179994.0,
+      "size": 160142
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_ABRIL 2025.xlsx",
+      "modified_time": 1766001810.0,
+      "size": 596643
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_AGOSTO 2025.xlsx",
+      "modified_time": 1765406051.0,
+      "size": 634206
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_ENERO 2025.xlsx",
+      "modified_time": 1765406100.0,
+      "size": 625478
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_FEBRERO 2025.xlsx",
+      "modified_time": 1765406094.0,
+      "size": 489618
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_JULIO 2025.xlsx",
+      "modified_time": 1765406057.0,
+      "size": 640321
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_JUNIO 2025.xlsx",
+      "modified_time": 1765406066.0,
+      "size": 616903
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_MARZO 2025.xlsx",
+      "modified_time": 1765406090.0,
+      "size": 629860
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_MAYO 2025.xlsx",
+      "modified_time": 1765406074.0,
+      "size": 644014
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_NOVIEMBRE 2025.xlsx",
+      "modified_time": 1765466105.0,
+      "size": 577659
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_OCTUBRE 2025.xlsx",
+      "modified_time": 1765406037.0,
+      "size": 637287
+    },
+    {
+      "nombre": "PRODUCCIÓN DE ENERGÍA_SETIEMBRE 2025.xlsx",
+      "modified_time": 1765406046.0,
+      "size": 613714
+    },
+    {
+      "nombre": "Control Hidrológico.xlsx",
+      "modified_time": 1766179755.0,
+      "size": 122703
+    },
+    {
+      "nombre": "BDREPRESAS.xlsx",
+      "modified_time": 1767018226.9477763,
+      "size": 5861971
+    },
+    {
+      "nombre": "Facturacion 2025.xlsx",
+      "modified_time": 1767018231.8518977,
+      "size": 4343784
+    },
+    {
+      "nombre": "Revision de Volumen Optimo de Contratos 2025-2036 - Listo.xlsx",
+      "modified_time": 1766436370.0,
+      "size": 13298223
+    }
+  ],
+  "datasets": {
+    "generacion_mensual": {
+      "filas": 1728,
+      "alertas": [],
+      "fecha_min": "2010-01-01T00:00:00",
+      "fecha_max": "2025-12-01T00:00:00",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202504": {
+      "filas": 120960,
+      "alertas": [],
+      "fecha_min": "2025-04-01T00:00:00",
+      "fecha_max": "2025-04-30T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202508": {
+      "filas": 124992,
+      "alertas": [],
+      "fecha_min": "2025-08-01T00:00:00",
+      "fecha_max": "2025-08-31T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202501": {
+      "filas": 124992,
+      "alertas": [],
+      "fecha_min": "2025-01-01T00:00:00",
+      "fecha_max": "2025-01-31T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202502": {
+      "filas": 112896,
+      "alertas": [],
+      "fecha_min": "2025-02-01T00:00:00",
+      "fecha_max": "2025-02-28T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202507": {
+      "filas": 124992,
+      "alertas": [],
+      "fecha_min": "2025-07-01T00:00:00",
+      "fecha_max": "2025-07-31T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202506": {
+      "filas": 120960,
+      "alertas": [],
+      "fecha_min": "2025-06-01T00:00:00",
+      "fecha_max": "2025-06-30T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202503": {
+      "filas": 124992,
+      "alertas": [],
+      "fecha_min": "2025-03-01T00:00:00",
+      "fecha_max": "2025-03-31T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202505": {
+      "filas": 124992,
+      "alertas": [],
+      "fecha_min": "2025-05-01T00:00:00",
+      "fecha_max": "2025-05-31T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202511": {
+      "filas": 109440,
+      "alertas": [],
+      "fecha_min": "2025-11-01T00:00:00",
+      "fecha_max": "2025-11-30T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202510": {
+      "filas": 124992,
+      "alertas": [],
+      "fecha_min": "2025-10-01T00:00:00",
+      "fecha_max": "2025-10-31T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "generacion_15min_202509": {
+      "filas": 120960,
+      "alertas": [],
+      "fecha_min": "2025-09-01T00:00:00",
+      "fecha_max": "2025-09-30T23:59:59.999000",
+      "centrales_no_mapeadas": 0
+    },
+    "hidro_volumen_mensual": {
+      "filas": 4872,
+      "alertas": [],
+      "fecha_min": "1968-01-01T00:00:00",
+      "fecha_max": "2025-12-01T00:00:00"
+    },
+    "hidro_caudal_mensual": {
+      "filas": 696,
+      "alertas": [],
+      "fecha_min": "1968-01-01T00:00:00",
+      "fecha_max": "2025-12-01T00:00:00"
+    },
+    "represas_diario": {
+      "filas": 8,
+      "alertas": [],
+      "fecha_min": "2025-12-11T00:00:00",
+      "fecha_max": "2025-12-11T00:00:00"
+    },
+    "ventas_mensual_mwh": {
+      "filas": 312,
+      "alertas": [
+        "duplicados:52"
+      ],
+      "fecha_min": "2024-12-01T00:00:00",
+      "fecha_max": "2025-12-01T00:00:00",
+      "clientes_vacios": 0
+    },
+    "ventas_mensual_soles": {
+      "filas": 325,
+      "alertas": [
+        "duplicados:52"
+      ],
+      "fecha_min": "2024-12-01T00:00:00",
+      "fecha_max": "2025-12-01T00:00:00",
+      "clientes_vacios": 0
+    },
+    "ingresos_mensual": {
+      "filas": 450,
+      "alertas": [],
+      "fecha_min": "2025-01-01T00:00:00",
+      "fecha_max": "2025-12-01T00:00:00"
+    },
+    "precio_medio_mensual": {
+      "filas": 256,
+      "alertas": [],
+      "fecha_min": "2024-12-01T00:00:00",
+      "fecha_max": "2025-12-01T00:00:00",
+      "clientes_vacios": 0
+    },
+    "contratos_base": {
+      "filas": 147,
+      "alertas": [
+        "duplicados:96",
+        "faltantes:2"
+      ],
+      "fecha_min": "2014-01-01T00:00:00",
+      "fecha_max": "2036-12-31T00:00:00",
+      "clientes_vacios": 1
+    },
+    "contratos_riesgo": {
+      "filas": 0,
+      "alertas": [
+        "dataset_vacio"
+      ],
+      "clientes_vacios": 0
+    }
+  }
+}

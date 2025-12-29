@@ -13,7 +13,7 @@ import pandas as pd
 
 from ..config import DATA_LANDING, DATA_MART, DATA_REFERENCE, LANDING_FILES, OUTPUT_FILES
 from ..utils_cleaning import load_centrales_reference, map_central_id
-from ..utils_io import detect_header_row, list_matching_files, read_excel_safe, safe_write_csv
+from ..utils_io import detect_header_row, list_matching_files, safe_write_csv
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,6 @@ CENTRALES_DEFAULT = [
 
 def ensure_centrales_reference() -> Path:
     """Crear archivo de referencia de centrales si no existe."""
-
     path = DATA_REFERENCE / "centrales_egasa.csv"
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,9 +52,11 @@ def ensure_centrales_reference() -> Path:
     return path
 
 
+# -------------------------
+# HISTÓRICO MENSUAL (2010-2025)
+# -------------------------
 def _process_historico(path: Path, centrales_df: pd.DataFrame) -> pd.DataFrame:
     """Procesar energía mensual desde Excel histórico."""
-
     try:
         xls = pd.ExcelFile(path)
     except Exception:
@@ -87,7 +88,7 @@ def _process_historico(path: Path, centrales_df: pd.DataFrame) -> pd.DataFrame:
         if year < 2010 or year > 2025:
             continue
 
-        preview = pd.read_excel(path, sheet_name=sheet, header=None, nrows=60)
+        preview = pd.read_excel(path, sheet_name=sheet, header=None, nrows=80)
         header_row = detect_header_row(preview, keywords=["central", "enero", "diciembre"])
         df_sheet = pd.read_excel(path, sheet_name=sheet, header=header_row)
         df_sheet = df_sheet.rename(columns=lambda c: str(c).strip().upper())
@@ -113,18 +114,20 @@ def _process_historico(path: Path, centrales_df: pd.DataFrame) -> pd.DataFrame:
             value_name="energia_kwh",
         )
         df_melt = df_melt.dropna(subset=["central"])
+
         df_melt["mes_raw"] = df_melt["mes_raw"].astype(str).str.upper().str.strip()
         df_melt["mes"] = df_melt["mes_raw"].map(lambda m: month_map.get(m, None))
         df_melt["mes"] = pd.to_numeric(df_melt["mes"], errors="coerce")
         df_melt = df_melt.dropna(subset=["mes"])
         df_melt["mes"] = df_melt["mes"].astype(int)
+
         df_melt["energia_mwh"] = pd.to_numeric(df_melt["energia_kwh"], errors="coerce") / 1000
         df_melt["anio"] = int(year)
-        df_melt["periodo"] = df_melt.apply(
-            lambda row: f"{int(row['anio'])}{int(row['mes']):02d}", axis=1
-        )
+        df_melt["periodo"] = df_melt.apply(lambda r: f"{int(r['anio'])}{int(r['mes']):02d}", axis=1)
+
         df_melt = map_central_id(df_melt, centrales_df, source_col="central")
         df_melt = df_melt.dropna(subset=["central_id"])
+
         frames.append(df_melt[["central_id", "central", "anio", "mes", "periodo", "energia_mwh"]])
 
     if frames:
@@ -137,23 +140,11 @@ def _process_historico(path: Path, centrales_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(columns=["central_id", "central", "anio", "mes", "periodo", "energia_mwh"])
 
 
-def _parse_timestamp(row: pd.Series) -> pd.Timestamp | None:
-    """Combinar FECHA y HORA en un timestamp."""
-
-    fecha = row.get("FECHA")
-    hora = row.get("HORA")
-    if pd.isna(fecha):
-        return None
-    try:
-        ts = pd.to_datetime(f"{fecha} {hora}")
-        return ts
-    except Exception:
-        return None
-
-
+# -------------------------
+# 15-MIN (mensuales 2025)
+# -------------------------
 def _split_central_and_unidad(central_value: object, unidad_value: object) -> Tuple[str, str]:
     """Separar etiquetas de central y medidor permitiendo formato 'Central | Medidor'."""
-
     central_raw = str(central_value).strip() if pd.notna(central_value) else ""
     unidad_raw = str(unidad_value).strip() if pd.notna(unidad_value) else ""
 
@@ -173,7 +164,6 @@ def _split_central_and_unidad(central_value: object, unidad_value: object) -> Tu
 
 def _normalize_central_label(label: str) -> str:
     """Homologar variaciones de nombres de central."""
-
     if label is None or (isinstance(label, float) and pd.isna(label)):
         label = ""
     text = str(label).upper()
@@ -201,7 +191,6 @@ def _normalize_central_label(label: str) -> str:
 
 def _clean_unidad_label(label: str) -> str:
     """Limpiar etiqueta de unidad/medidor."""
-
     if label is None or (isinstance(label, float) and pd.isna(label)):
         label = ""
     text = str(label).replace("-kWh", "").replace("kWh", "")
@@ -210,124 +199,146 @@ def _clean_unidad_label(label: str) -> str:
     return text or "U1"
 
 
+def _is_empty_header(x: object) -> bool:
+    """True si el header está vacío/NaN/Unnamed/etc."""
+    if x is None:
+        return True
+    if isinstance(x, float) and pd.isna(x):
+        return True
+    s = str(x).strip()
+    if not s:
+        return True
+    sl = s.lower()
+    return sl in {"nan", "none"} or sl.startswith("unnamed")
+
+
+def _clean_header_str(x: object) -> str:
+    """Normaliza texto de header y retorna '' si es vacío."""
+    if _is_empty_header(x):
+        return ""
+    return re.sub(r"\s+", " ", str(x).strip())
+
+
 def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     """Procesar archivos 15-min y retornarlos particionados por periodo real (YYYYMM)."""
-
     df_raw = pd.read_excel(path, header=None)
     if df_raw.empty or df_raw.shape[0] < 3:
         logger.warning("Archivo 15min %s sin filas útiles", path)
         return {}
 
+    # Intento de detectar si el archivo no empieza exactamente en fila 0
     header_row = 0
-    fecha_hora_col = df_raw.iloc[header_row, 0]
-    if isinstance(fecha_hora_col, str) and "FECHA" not in fecha_hora_col.upper():
-        header_row = detect_header_row(df_raw.head(10), keywords=["fecha", "hora"])
-    if header_row != 0:
+    a1 = df_raw.iloc[0, 0]
+    if isinstance(a1, str) and "FECHA" not in a1.upper():
+        header_row = detect_header_row(df_raw.head(12), keywords=["fecha", "hora"])
+    if header_row and header_row > 0:
         df_raw = df_raw.iloc[header_row:].reset_index(drop=True)
 
     if df_raw.shape[0] < 3:
         logger.warning("Archivo 15min %s no tiene datos tras header", path)
         return {}
 
-    # Construir metadatos de columnas: fila 0 centrales, fila 1 unidades/medidores
-    raw_central_row = df_raw.iloc[0]
-    cleaned_row: List[str | None] = []
-    last_value: str | None = None
+    # Fila 0 = grupos (centrales), fila 1 = medidores
+    raw_central_row = df_raw.iloc[0].tolist()
+    unidad_row = df_raw.iloc[1].tolist() if df_raw.shape[0] > 1 else []
+
+    # Forward-fill horizontal robusto (para evitar central_raw nan)
+    cleaned_row: List[str] = []
+    last_value: str = ""
     for idx, val in enumerate(raw_central_row):
         if idx == 0:
-            cleaned_row.append(val)
+            cleaned_row.append("")  # columna de tiempo
             continue
-        text = "" if val is None or (isinstance(val, float) and pd.isna(val)) else str(val).strip()
-        is_empty = (
-            text == ""
-            or text.lower() in {"nan", "none"}
-            or text.lower().startswith("unnamed")
-        )
-        if is_empty:
-            cleaned_row.append(last_value)
-        else:
-            last_value = text
-            cleaned_row.append(last_value)
+        g = _clean_header_str(val)
+        if g:
+            last_value = g
+        cleaned_row.append(last_value)
+
     central_row = pd.Series(cleaned_row)
-    col_info = []
-    unidad_row = df_raw.iloc[1] if df_raw.shape[0] > 1 else pd.Series()
-    for idx, col_name in enumerate(central_row):
+
+    col_info: List[Dict[str, object]] = []
+    for idx in range(len(central_row)):
         if idx == 0:
             col_info.append({"col": idx, "tipo": "fecha_hora"})
             continue
+
+        central_label = _clean_header_str(central_row.iloc[idx])
         unidad_value = unidad_row[idx] if idx < len(unidad_row) else None
-        central_label, unidad_label = _split_central_and_unidad(col_name, unidad_value)
-        central_label = central_label or None
-        unidad_label_raw = str(unidad_value).strip() if pd.notna(unidad_value) else ""
-        central_label_for_raw = central_label or "DESCONOCIDO"
-        combined_raw = f"{central_label_for_raw} | {unidad_label_raw}".strip(" |")
-        central_clean = "DESCONOCIDO" if central_label is None else _normalize_central_label(central_label)
+        unidad_label = _clean_header_str(unidad_value)
+
+        # Si no hay central (ni siquiera tras ffill), ignorar columna.
+        if not central_label:
+            col_info.append(
+                {
+                    "col": idx,
+                    "tipo": "ignorar",
+                    "motivo": "sin_central",
+                    "unidad_header": unidad_label or f"col_{idx}",
+                }
+            )
+            continue
+
+        # unidad fallback
+        if not unidad_label:
+            unidad_label = f"col_{idx}"
+
+        # Normalización final
+        central_clean = _normalize_central_label(central_label)
         unidad_clean = _clean_unidad_label(unidad_label)
+
         col_info.append(
             {
                 "col": idx,
-                "central_raw": combined_raw,
-                "central_raw_label": central_label_for_raw,
-                "central_missing": central_label is None,
+                "tipo": "dato",
+                "central_raw": f"{central_label} | {unidad_label}",
                 "central": central_clean,
                 "unidad": unidad_clean,
             }
         )
 
-    missing_central_cols = [
-        info for info in col_info if info.get("tipo") != "fecha_hora" and info.get("central_missing")
-    ]
-    if missing_central_cols:
+    ignored = [x for x in col_info if x.get("tipo") == "ignorar"]
+    if ignored:
         logger.warning(
-            "Columnas sin central asignada tras ffill: %s",
-            [
-                {
-                    "col_index": info["col"],
-                    "unidad_header": unidad_row[info["col"]] if info["col"] < len(unidad_row) else None,
-                }
-                for info in missing_central_cols
-            ],
+            "Columnas 15min ignoradas por no tener central (ejemplos): %s",
+            ignored[:10],
         )
 
+    # Datos desde fila 2
     data = df_raw.iloc[2:].reset_index(drop=True)
     data = data.rename(columns={0: "FECHA_HORA"})
     data["FECHA_HORA"] = pd.to_datetime(data["FECHA_HORA"], errors="coerce")
+    if data["FECHA_HORA"].isna().all():
+        logger.warning("No se pudieron parsear timestamps en %s", path)
+        return {}
 
     records: List[pd.DataFrame] = []
     for info in col_info:
-        if info.get("tipo") == "fecha_hora":
+        if info.get("tipo") != "dato":
             continue
-        col_idx = info["col"]
+
+        col_idx = int(info["col"])
         series = pd.to_numeric(data.get(col_idx), errors="coerce")
-        valid_series_mask = series.notna() & (series >= 0)
+
+        # Primero filtrar valores útiles
+        mask = series.notna() & (series >= 0) & data["FECHA_HORA"].notna()
+        if not mask.any():
+            continue
+
         tmp = pd.DataFrame(
             {
-                "fecha_hora": data["FECHA_HORA"],
+                "fecha_hora": data.loc[mask, "FECHA_HORA"],
                 "central": info["central"],
-                "central_raw": info.get("central_raw", info["central"]),
-                "central_raw_label": info.get("central_raw_label"),
+                "central_raw": info["central_raw"],
                 "unidad": info["unidad"],
-                "energia_mwh": series / 1000,
+                "energia_mwh": series.loc[mask] / 1000,
             }
         )
-        tmp = tmp.loc[valid_series_mask].dropna(subset=["fecha_hora"])
-        unknown_mask = tmp["central_raw_label"].isna() | (tmp["central_raw_label"] == "DESCONOCIDO")
-        if unknown_mask.any():
-            tmp.loc[unknown_mask, "central_raw"] = tmp.loc[unknown_mask, "central_raw"].fillna("DESCONOCIDO")
-            logger.warning(
-                "Columnas 15min con central DESCONOCIDO en %s: %s",
-                path,
-                tmp.loc[unknown_mask, "unidad"].unique(),
-            )
-        known_mask = ~unknown_mask
-        mapped = map_central_id(tmp.loc[known_mask].copy(), centrales_df, source_col="central")
-        tmp = pd.concat(
-            [mapped, tmp.loc[~known_mask].assign(central_id=None)],
-            ignore_index=True,
-        ).drop(columns=["central_raw_label"])
-        records.append(tmp)
 
-    records = [df for df in records if not df.empty]
+        # Mapear central_id (ya no debería haber central vacía aquí)
+        mapped = map_central_id(tmp.copy(), centrales_df, source_col="central")
+        records.append(mapped)
+
+    records = [df for df in records if df is not None and not df.empty]
     if not records:
         return {}
 
@@ -340,14 +351,16 @@ def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataF
     particiones: Dict[str, pd.DataFrame] = {}
     for periodo, df_part in df_all.groupby("periodo"):
         df_part = df_part.drop_duplicates(subset=["fecha_hora", "central_id", "unidad"])
-        particiones[periodo] = df_part
+        particiones[str(periodo)] = df_part
 
     return particiones
 
 
+# -------------------------
+# ORQUESTACIÓN
+# -------------------------
 def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[str]]]]:
     """Ejecutar pipelines de producción."""
-
     files_read: List[Path] = []
     datasets: Dict[str, Tuple[pd.DataFrame, Iterable[str]]] = {}
 
@@ -361,29 +374,32 @@ def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataF
     if historicos:
         historico_df = _process_historico(historicos[0], centrales_df)
         files_read.append(historicos[0])
+
     safe_write_csv(historico_df, DATA_MART / OUTPUT_FILES["generacion_mensual"])
     datasets["generacion_mensual"] = (historico_df, ["central_id", "anio", "mes", "periodo"])
 
     # Producción 15min
     archivos_15 = list_matching_files(DATA_LANDING, LANDING_FILES["produccion_15min"])
     particiones: Dict[str, pd.DataFrame] = {}
+
     for archivo in archivos_15:
         files_read.append(archivo)
-        try:
-            particiones_archivo = _process_15min(archivo, centrales_df)
-        except Exception:
-            logger.exception("Error procesando archivo 15min %s", archivo)
-            raise
+        particiones_archivo = _process_15min(archivo, centrales_df)
+
         for periodo, df_part in particiones_archivo.items():
             existing_path = DATA_MART / OUTPUT_FILES["generacion_15min_template"].format(yyyymm=periodo)
+
             if existing_path.exists():
                 prev = pd.read_csv(existing_path, parse_dates=["fecha_hora"], low_memory=False)
             else:
                 prev = pd.DataFrame(columns=df_part.columns)
+
+            # Asegurar mismas columnas
             for col in df_part.columns:
                 if col not in prev.columns:
                     prev[col] = None
-            frames_to_concat = [df for df in (prev[df_part.columns], df_part) if not df.empty]
+
+            frames_to_concat = [df for df in (prev[df_part.columns], df_part) if df is not None and not df.empty]
             if frames_to_concat:
                 merged = (
                     pd.concat(frames_to_concat, ignore_index=True)
@@ -392,6 +408,7 @@ def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataF
                 )
             else:
                 merged = pd.DataFrame(columns=df_part.columns)
+
             safe_write_csv(merged, existing_path)
             particiones[periodo] = merged
 
