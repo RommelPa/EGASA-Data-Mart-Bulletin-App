@@ -1,1 +1,34 @@
-äjhÆ€-≠Ê¶ñ+Z≤Àböö+∂ñßu´
+# -*- coding: utf-8 -*-
+
+"""P√°gina de producci√≥n."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
+DATA_MART = Path(__file__).resolve().parents[2] / "data_mart"
+
+
+def main() -> None:
+    st.title("Producci√≥n")
+
+    mensual_path = DATA_MART / "generacion_mensual.csv"
+    if mensual_path.exists():
+        df = pd.read_csv(mensual_path)
+        st.subheader("Generaci√≥n mensual (MWh)")
+        st.dataframe(df)
+    else:
+        st.info("No se encontr√≥ generacion_mensual.csv")
+
+    st.subheader("Generaci√≥n 15-min")
+    for csv_file in sorted(DATA_MART.glob("generacion_15min_*.csv")):
+        st.markdown(f"**{csv_file.name}**")
+        df15 = pd.read_csv(csv_file, parse_dates=["fecha_hora"])
+        st.dataframe(df15.head(200))
+
+
+if __name__ == "__main__":
+    main()
