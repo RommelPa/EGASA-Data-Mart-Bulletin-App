@@ -230,7 +230,25 @@ def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataF
         return {}
 
     # Construir metadatos de columnas: fila 0 centrales, fila 1 unidades/medidores
-    central_row = df_raw.iloc[0].ffill()
+    raw_central_row = df_raw.iloc[0]
+    cleaned_row: List[str | None] = []
+    last_value: str | None = None
+    for idx, val in enumerate(raw_central_row):
+        if idx == 0:
+            cleaned_row.append(val)
+            continue
+        text = "" if val is None or (isinstance(val, float) and pd.isna(val)) else str(val).strip()
+        is_empty = (
+            text == ""
+            or text.lower() in {"nan", "none"}
+            or text.lower().startswith("unnamed")
+        )
+        if is_empty:
+            cleaned_row.append(last_value)
+        else:
+            last_value = text
+            cleaned_row.append(last_value)
+    central_row = pd.Series(cleaned_row)
     col_info = []
     unidad_row = df_raw.iloc[1] if df_raw.shape[0] > 1 else pd.Series()
     for idx, col_name in enumerate(central_row):
@@ -239,15 +257,36 @@ def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataF
             continue
         unidad_value = unidad_row[idx] if idx < len(unidad_row) else None
         central_label, unidad_label = _split_central_and_unidad(col_name, unidad_value)
-        central_clean = _normalize_central_label(central_label)
+        central_label = central_label or None
+        unidad_label_raw = str(unidad_value).strip() if pd.notna(unidad_value) else ""
+        central_label_for_raw = central_label or "DESCONOCIDO"
+        combined_raw = f"{central_label_for_raw} | {unidad_label_raw}".strip(" |")
+        central_clean = "DESCONOCIDO" if central_label is None else _normalize_central_label(central_label)
         unidad_clean = _clean_unidad_label(unidad_label)
         col_info.append(
             {
                 "col": idx,
-                "central_raw": central_label or f"CENTRAL_{idx}",
+                "central_raw": combined_raw,
+                "central_raw_label": central_label_for_raw,
+                "central_missing": central_label is None,
                 "central": central_clean,
                 "unidad": unidad_clean,
             }
+        )
+
+    missing_central_cols = [
+        info for info in col_info if info.get("tipo") != "fecha_hora" and info.get("central_missing")
+    ]
+    if missing_central_cols:
+        logger.warning(
+            "Columnas sin central asignada tras ffill: %s",
+            [
+                {
+                    "col_index": info["col"],
+                    "unidad_header": unidad_row[info["col"]] if info["col"] < len(unidad_row) else None,
+                }
+                for info in missing_central_cols
+            ],
         )
 
     data = df_raw.iloc[2:].reset_index(drop=True)
@@ -260,18 +299,35 @@ def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataF
             continue
         col_idx = info["col"]
         series = pd.to_numeric(data.get(col_idx), errors="coerce")
+        valid_series_mask = series.notna() & (series >= 0)
         tmp = pd.DataFrame(
             {
                 "fecha_hora": data["FECHA_HORA"],
                 "central": info["central"],
                 "central_raw": info.get("central_raw", info["central"]),
+                "central_raw_label": info.get("central_raw_label"),
                 "unidad": info["unidad"],
                 "energia_mwh": series / 1000,
             }
-        ).dropna(subset=["fecha_hora"])
-        tmp = map_central_id(tmp, centrales_df, source_col="central")
+        )
+        tmp = tmp.loc[valid_series_mask].dropna(subset=["fecha_hora"])
+        unknown_mask = tmp["central_raw_label"].isna() | (tmp["central_raw_label"] == "DESCONOCIDO")
+        if unknown_mask.any():
+            tmp.loc[unknown_mask, "central_raw"] = tmp.loc[unknown_mask, "central_raw"].fillna("DESCONOCIDO")
+            logger.warning(
+                "Columnas 15min con central DESCONOCIDO en %s: %s",
+                path,
+                tmp.loc[unknown_mask, "unidad"].unique(),
+            )
+        known_mask = ~unknown_mask
+        mapped = map_central_id(tmp.loc[known_mask].copy(), centrales_df, source_col="central")
+        tmp = pd.concat(
+            [mapped, tmp.loc[~known_mask].assign(central_id=None)],
+            ignore_index=True,
+        ).drop(columns=["central_raw_label"])
         records.append(tmp)
 
+    records = [df for df in records if not df.empty]
     if not records:
         return {}
 
