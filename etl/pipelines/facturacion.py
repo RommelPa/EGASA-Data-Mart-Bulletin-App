@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
@@ -31,6 +32,24 @@ MONTH_MAP = {
     "NOVIEMBRE": "11",
     "DICIEMBRE": "12",
 }
+
+
+def _normalize_sheet_name(name: str) -> str:
+    """Normalizar nombre de hoja para comparación insensible a espacios/casos."""
+
+    return re.sub(r"[^A-Z0-9]", "", str(name).upper())
+
+
+def _find_sheet(path: Path, target: str) -> str | None:
+    """Buscar hoja por nombre normalizado."""
+
+    xls = pd.ExcelFile(path)
+    target_norm = _normalize_sheet_name(target)
+    for sheet in xls.sheet_names:
+        normalized = _normalize_sheet_name(sheet)
+        if normalized == target_norm or normalized.startswith(target_norm):
+            return sheet
+    return None
 
 
 def _read_with_header(path: Path, sheet_name: str, keywords: List[str]) -> pd.DataFrame:
@@ -62,6 +81,13 @@ def _periodo_from_value(value: object) -> str | None:
     return None
 
 
+def _extract_year_from_filename(path: Path) -> int | None:
+    """Intentar extraer año (4 dígitos) desde el nombre del archivo."""
+
+    match = re.search(r"(20\d{2})", path.name)
+    return int(match.group(1)) if match else None
+
+
 def _parse_sales(df: pd.DataFrame, value_name: str) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["cliente", "periodo", value_name])
@@ -85,25 +111,50 @@ def _parse_sales(df: pd.DataFrame, value_name: str) -> pd.DataFrame:
     return df_long[["cliente", "periodo", value_name]]
 
 
-def _parse_ingresos(df: pd.DataFrame) -> pd.DataFrame:
+def _parse_ingresos(df: pd.DataFrame, year: int | None) -> pd.DataFrame:
     if df.empty:
-        return pd.DataFrame(columns=["concepto", "periodo", "soles"])
+        return pd.DataFrame(columns=["anio", "mes", "cliente_o_concepto", "soles"])
+
+    df = df.dropna(axis=1, how="all")
     df = df.rename(columns=lambda c: c if isinstance(c, (pd.Timestamp, datetime)) else str(c).strip().upper())
-    id_col = df.columns[0]
+
     month_cols = [
         c
         for c in df.columns
-        if c != id_col and (isinstance(c, (pd.Timestamp, datetime)) or str(c).upper() in MONTH_MAP)
+        if (isinstance(c, (pd.Timestamp, datetime)) or str(c).upper() in MONTH_MAP) and pd.notna(c)
     ]
     if not month_cols:
         logger.warning("No se detectaron columnas de meses en Ingresos")
-        return pd.DataFrame(columns=["concepto", "periodo", "soles"])
-    df_long = df.melt(id_vars=[id_col], value_vars=month_cols, var_name="periodo_raw", value_name="soles")
-    df_long = df_long.rename(columns={id_col: "concepto"})
-    df_long["periodo"] = df_long["periodo_raw"].map(_periodo_from_value)
+        return pd.DataFrame(columns=["anio", "mes", "cliente_o_concepto", "soles"])
+
+    id_candidates = [c for c in df.columns if c not in month_cols]
+    entity_col = None
+    for candidate in id_candidates:
+        if df[candidate].notna().any():
+            entity_col = candidate
+            break
+    if entity_col is None:
+        logger.warning("No se pudo identificar columna de concepto en Ingresos")
+        return pd.DataFrame(columns=["anio", "mes", "cliente_o_concepto", "soles"])
+
+    df_long = df.melt(id_vars=[entity_col], value_vars=month_cols, var_name="mes_raw", value_name="soles")
+    df_long = df_long.rename(columns={entity_col: "cliente_o_concepto"})
+
+    def _month_from_header(value: object) -> int | None:
+        if isinstance(value, (pd.Timestamp, datetime)):
+            return int(value.month)
+        text = str(value).strip().upper()
+        return int(MONTH_MAP[text]) if text in MONTH_MAP else None
+
+    df_long["mes"] = df_long["mes_raw"].map(_month_from_header)
+    anio_val = year or datetime.utcnow().year
     df_long["soles"] = pd.to_numeric(df_long["soles"], errors="coerce")
-    df_long = df_long.dropna(subset=["concepto", "periodo"])
-    return df_long[["concepto", "periodo", "soles"]]
+    df_long["cliente_o_concepto"] = df_long["cliente_o_concepto"].astype(str).str.strip()
+    df_long["anio"] = anio_val
+    df_long = df_long.dropna(subset=["cliente_o_concepto", "mes", "anio"])
+    df_long["mes"] = df_long["mes"].astype(int)
+
+    return df_long[["anio", "mes", "cliente_o_concepto", "soles"]]
 
 
 def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[str]]]]:
@@ -115,7 +166,7 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
     fact_files = list_matching_files(DATA_LANDING, LANDING_FILES["facturacion"])
     ventas_mwh = pd.DataFrame(columns=["cliente", "periodo", "mwh"])
     ventas_soles = pd.DataFrame(columns=["cliente", "periodo", "soles"])
-    ingresos = pd.DataFrame(columns=["concepto", "periodo", "soles"])
+    ingresos = pd.DataFrame(columns=["anio", "mes", "cliente_o_concepto", "soles"])
     precio_medio = pd.DataFrame(columns=["periodo", "precio_medio_soles_mwh"])
 
     if fact_files:
@@ -136,8 +187,12 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
             raise
 
         try:
-            ingresos_sheet = _read_with_header(path, "Ingresos", ["enero"])
-            ingresos = _parse_ingresos(ingresos_sheet)
+            ingresos_sheet_name = _find_sheet(path, "Ingresos")
+            if ingresos_sheet_name:
+                ingresos_sheet = _read_with_header(path, ingresos_sheet_name, ["enero"])
+                ingresos = _parse_ingresos(ingresos_sheet, year=_extract_year_from_filename(path))
+            else:
+                logger.warning("Hoja Ingresos no encontrada en %s", path)
         except Exception:
             logger.exception("Error procesando hoja Ingresos")
             raise
@@ -158,7 +213,7 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
 
     datasets["ventas_mensual_mwh"] = (ventas_mwh, ["cliente", "periodo"])
     datasets["ventas_mensual_soles"] = (ventas_soles, ["cliente", "periodo"])
-    datasets["ingresos_mensual"] = (ingresos, ["concepto", "periodo"])
+    datasets["ingresos_mensual"] = (ingresos, ["anio", "mes", "cliente_o_concepto"])
     datasets["precio_medio_mensual"] = (precio_medio, ["periodo"])
 
     return files_read, datasets

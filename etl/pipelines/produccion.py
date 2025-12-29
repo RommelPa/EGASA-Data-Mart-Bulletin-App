@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
@@ -114,12 +115,17 @@ def _process_historico(path: Path, centrales_df: pd.DataFrame) -> pd.DataFrame:
         df_melt = df_melt.dropna(subset=["central"])
         df_melt["mes_raw"] = df_melt["mes_raw"].astype(str).str.upper().str.strip()
         df_melt["mes"] = df_melt["mes_raw"].map(lambda m: month_map.get(m, None))
+        df_melt["mes"] = pd.to_numeric(df_melt["mes"], errors="coerce")
         df_melt = df_melt.dropna(subset=["mes"])
+        df_melt["mes"] = df_melt["mes"].astype(int)
         df_melt["energia_mwh"] = pd.to_numeric(df_melt["energia_kwh"], errors="coerce") / 1000
-        df_melt["anio"] = year
-        df_melt["periodo"] = df_melt["anio"].astype(int).astype(str) + df_melt["mes"]
+        df_melt["anio"] = int(year)
+        df_melt["periodo"] = df_melt.apply(
+            lambda row: f"{int(row['anio'])}{int(row['mes']):02d}", axis=1
+        )
         df_melt = map_central_id(df_melt, centrales_df, source_col="central")
-        frames.append(df_melt[["central_id", "central", "periodo", "energia_mwh"]])
+        df_melt = df_melt.dropna(subset=["central_id"])
+        frames.append(df_melt[["central_id", "central", "anio", "mes", "periodo", "energia_mwh"]])
 
     if frames:
         full = pd.concat(frames, ignore_index=True)
@@ -128,7 +134,7 @@ def _process_historico(path: Path, centrales_df: pd.DataFrame) -> pd.DataFrame:
         full = full.drop_duplicates(subset=["periodo", "central", "central_id"])
         return full
 
-    return pd.DataFrame(columns=["central_id", "central", "periodo", "energia_mwh"])
+    return pd.DataFrame(columns=["central_id", "central", "anio", "mes", "periodo", "energia_mwh"])
 
 
 def _parse_timestamp(row: pd.Series) -> pd.Timestamp | None:
@@ -143,6 +149,65 @@ def _parse_timestamp(row: pd.Series) -> pd.Timestamp | None:
         return ts
     except Exception:
         return None
+
+
+def _split_central_and_unidad(central_value: object, unidad_value: object) -> Tuple[str, str]:
+    """Separar etiquetas de central y medidor permitiendo formato 'Central | Medidor'."""
+
+    central_raw = str(central_value).strip() if pd.notna(central_value) else ""
+    unidad_raw = str(unidad_value).strip() if pd.notna(unidad_value) else ""
+
+    if "|" in central_raw:
+        parts = [p.strip() for p in central_raw.split("|", 1)]
+        central_raw = parts[0]
+        if not unidad_raw and len(parts) > 1:
+            unidad_raw = parts[1]
+    elif "|" in unidad_raw:
+        parts = [p.strip() for p in unidad_raw.split("|", 1)]
+        if not central_raw and parts:
+            central_raw = parts[0]
+        unidad_raw = parts[1] if len(parts) > 1 else parts[0]
+
+    return central_raw, unidad_raw
+
+
+def _normalize_central_label(label: str) -> str:
+    """Homologar variaciones de nombres de central."""
+
+    if label is None or (isinstance(label, float) and pd.isna(label)):
+        label = ""
+    text = str(label).upper()
+    text = text.replace("C.H.", "CHARCANI ").replace("C H", "CHARCANI ")
+    text = text.replace("C.T.", "C.T. ").replace("CT.", "C.T. ").replace("CT ", "C.T. ")
+    text = text.replace("C.T", "C.T.")
+    text = re.sub(r"\s+", " ", text).strip(" .")
+
+    roman_map = {"1": "I", "2": "II", "3": "III", "4": "IV", "5": "V", "6": "VI"}
+    match_charcani = re.search(r"(CHARCANI|CH)\s*(I{1,3}|IV|V|VI|1|2|3|4|5|6)", text)
+    if match_charcani:
+        numeral = match_charcani.group(2)
+        numeral = roman_map.get(numeral, numeral)
+        return f"CHARCANI {numeral}"
+
+    if "CHILINA" in text:
+        return "C.T. CHILINA"
+    if "PISCO" in text:
+        return "C.T. PISCO"
+    if "MOLLENDO" in text:
+        return "C.T. MOLLENDO"
+
+    return text or "CENTRAL"
+
+
+def _clean_unidad_label(label: str) -> str:
+    """Limpiar etiqueta de unidad/medidor."""
+
+    if label is None or (isinstance(label, float) and pd.isna(label)):
+        label = ""
+    text = str(label).replace("-kWh", "").replace("kWh", "")
+    text = text.replace("-", " ").replace("_", " ").strip()
+    text = text.split()[0] if text else ""
+    return text or "U1"
 
 
 def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
@@ -165,18 +230,21 @@ def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataF
         return {}
 
     # Construir metadatos de columnas: fila 0 centrales, fila 1 unidades/medidores
+    central_row = df_raw.iloc[0].ffill()
     col_info = []
-    for idx, col_name in enumerate(df_raw.iloc[0]):
+    unidad_row = df_raw.iloc[1] if df_raw.shape[0] > 1 else pd.Series()
+    for idx, col_name in enumerate(central_row):
         if idx == 0:
             col_info.append({"col": idx, "tipo": "fecha_hora"})
             continue
-        central_label = str(col_name) if pd.notna(col_name) else f"CENTRAL_{idx}"
-        unidad_label = str(df_raw.iloc[1, idx]) if idx < len(df_raw.columns) else "U1"
-        unidad_clean = unidad_label.split()[0].replace("-", "").replace("_", "") or "U1"
-        central_clean = central_label.replace("C.H.", "").replace("C.T.", "").replace("CH", "CHARCANI").strip()
+        unidad_value = unidad_row[idx] if idx < len(unidad_row) else None
+        central_label, unidad_label = _split_central_and_unidad(col_name, unidad_value)
+        central_clean = _normalize_central_label(central_label)
+        unidad_clean = _clean_unidad_label(unidad_label)
         col_info.append(
             {
                 "col": idx,
+                "central_raw": central_label or f"CENTRAL_{idx}",
                 "central": central_clean,
                 "unidad": unidad_clean,
             }
@@ -196,6 +264,7 @@ def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataF
             {
                 "fecha_hora": data["FECHA_HORA"],
                 "central": info["central"],
+                "central_raw": info.get("central_raw", info["central"]),
                 "unidad": info["unidad"],
                 "energia_mwh": series / 1000,
             }
@@ -232,12 +301,12 @@ def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataF
 
     # Producción histórica
     historicos = list_matching_files(DATA_LANDING, LANDING_FILES["produccion_historica"])
-    historico_df = pd.DataFrame(columns=["central_id", "central", "periodo", "energia_mwh"])
+    historico_df = pd.DataFrame(columns=["central_id", "central", "anio", "mes", "periodo", "energia_mwh"])
     if historicos:
         historico_df = _process_historico(historicos[0], centrales_df)
         files_read.append(historicos[0])
     safe_write_csv(historico_df, DATA_MART / OUTPUT_FILES["generacion_mensual"])
-    datasets["generacion_mensual"] = (historico_df, ["central_id", "periodo"])
+    datasets["generacion_mensual"] = (historico_df, ["central_id", "anio", "mes", "periodo"])
 
     # Producción 15min
     archivos_15 = list_matching_files(DATA_LANDING, LANDING_FILES["produccion_15min"])
@@ -252,14 +321,21 @@ def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataF
         for periodo, df_part in particiones_archivo.items():
             existing_path = DATA_MART / OUTPUT_FILES["generacion_15min_template"].format(yyyymm=periodo)
             if existing_path.exists():
-                prev = pd.read_csv(existing_path, parse_dates=["fecha_hora"])
+                prev = pd.read_csv(existing_path, parse_dates=["fecha_hora"], low_memory=False)
             else:
                 prev = pd.DataFrame(columns=df_part.columns)
-            merged = (
-                pd.concat([prev, df_part], ignore_index=True)
-                .drop_duplicates(subset=["fecha_hora", "central_id", "unidad"])
-                .sort_values(["fecha_hora", "central_id", "unidad"])
-            )
+            for col in df_part.columns:
+                if col not in prev.columns:
+                    prev[col] = None
+            frames_to_concat = [df for df in (prev[df_part.columns], df_part) if not df.empty]
+            if frames_to_concat:
+                merged = (
+                    pd.concat(frames_to_concat, ignore_index=True)
+                    .drop_duplicates(subset=["fecha_hora", "central_id", "unidad"])
+                    .sort_values(["fecha_hora", "central_id", "unidad"])
+                )
+            else:
+                merged = pd.DataFrame(columns=df_part.columns)
             safe_write_csv(merged, existing_path)
             particiones[periodo] = merged
 
