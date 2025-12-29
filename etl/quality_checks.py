@@ -47,20 +47,48 @@ def check_basic_issues(df: pd.DataFrame, key_columns: Iterable[str]) -> List[str
 
 
 def _date_bounds(df: pd.DataFrame) -> Tuple[str | None, str | None]:
+    def _dates_from_anio_mes(frame: pd.DataFrame) -> pd.Series:
+        if {"anio", "mes"} <= set(frame.columns):
+            years = pd.to_numeric(frame["anio"], errors="coerce")
+            months = pd.to_numeric(frame["mes"], errors="coerce")
+            return pd.to_datetime({"year": years, "month": months, "day": 1}, errors="coerce")
+        return pd.Series(dtype="datetime64[ns]")
+
+    def _parse_periodo(series: pd.Series) -> pd.Series:
+        if series.empty:
+            return pd.Series(dtype="datetime64[ns]")
+        text = series.astype(str).str.extract(r"(\d{6,8})")[0]
+        parsed = pd.to_datetime(text, format="%Y%m", errors="coerce")
+        parsed = parsed.fillna(pd.to_datetime(text, format="%Y%m%d", errors="coerce"))
+        return parsed
+
     date_cols = [c for c in df.columns if "fecha" in c or "periodo" in c]
-    if not date_cols:
+    if not date_cols and not {"anio", "mes"} <= set(df.columns):
         return None, None
+
     min_ts = None
     max_ts = None
+
+    date_candidates = []
+    date_from_parts = _dates_from_anio_mes(df)
+    if not date_from_parts.empty:
+        date_candidates.append(date_from_parts)
+
     for col in date_cols:
         series = df[col]
         if pd.api.types.is_datetime64_any_dtype(series):
-            current_min = series.min()
-            current_max = series.max()
+            parsed = series
+        elif "periodo" in col:
+            parsed = _parse_periodo(series)
         else:
             parsed = pd.to_datetime(series, errors="coerce")
-            current_min = parsed.min()
-            current_max = parsed.max()
+        date_candidates.append(parsed)
+
+    for parsed in date_candidates:
+        if parsed.empty:
+            continue
+        current_min = parsed.min()
+        current_max = parsed.max()
         if pd.notna(current_min):
             min_ts = min_ts if min_ts is not None and min_ts < current_min else current_min
         if pd.notna(current_max):
@@ -73,7 +101,21 @@ def _date_bounds(df: pd.DataFrame) -> Tuple[str | None, str | None]:
 def _quality_counters(df: pd.DataFrame) -> Dict[str, int]:
     counters: Dict[str, int] = {}
     if "central_id" in df.columns:
-        counters["centrales_no_mapeadas"] = int(df["central_id"].isna().sum())
+        missing_mask = df["central_id"].isna()
+        counters["centrales_no_mapeadas"] = int(missing_mask.sum())
+        if missing_mask.any() and "central_raw" in df.columns:
+            top = (
+                df.loc[missing_mask, "central_raw"]
+                .astype(str)
+                .str.strip()
+                .replace("", pd.NA)
+                .dropna()
+                .value_counts()
+                .head(20)
+            )
+            counters["centrales_no_mapeadas_top"] = [
+                {"central_raw": name, "filas": int(count)} for name, count in top.items()
+            ]
     if "cliente" in df.columns:
         counters["clientes_vacios"] = int(df["cliente"].isna().sum() + (df["cliente"].astype(str).str.strip() == "").sum())
     return counters
