@@ -21,6 +21,12 @@ def check_basic_issues(df: pd.DataFrame, key_columns: Iterable[str]) -> List[str
     """Regresar lista de alertas detectadas."""
 
     alerts: List[str] = []
+
+    missing_columns = [col for col in key_columns if col not in df.columns]
+    if missing_columns:
+        alerts.append("columnas_no_detectadas")
+        return alerts
+
     if df.empty:
         alerts.append("dataset_vacio")
         return alerts

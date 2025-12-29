@@ -13,19 +13,33 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def detect_header_row(df_preview: pd.DataFrame, expected_columns: Iterable[str]) -> int:
+def detect_header_row(
+    df_preview: pd.DataFrame,
+    expected_columns: Optional[Iterable[str]] = None,
+    keywords: Optional[Iterable[str]] = None,
+) -> int:
     """Detectar la fila que contiene los nombres de columnas.
 
-    Busca la primera fila que contenga la mayoría de columnas esperadas (case-insensitive).
+    Prioriza coincidencias exactas de *keywords* (case-insensitive) y, si no
+    existen, usa expected_columns para buscar una coincidencia parcial.
     Devuelve el índice (0-based) que debe usarse como header en pandas.read_excel.
     """
 
-    expected = {col.strip().lower() for col in expected_columns}
+    keyword_set = {kw.strip().lower() for kw in keywords or [] if kw}
+    expected_set = {col.strip().lower() for col in expected_columns or []}
+
     for idx, row in df_preview.iterrows():
-        row_values = {str(v).strip().lower() for v in row if pd.notna(v)}
-        match_ratio = len(expected & row_values) / max(len(expected), 1)
-        if match_ratio >= 0.6:
+        row_values = [str(v).strip().lower() for v in row if pd.notna(v) and str(v).strip()]
+        row_text = " ".join(row_values)
+
+        if keyword_set and all(any(kw in value for value in row_values) or kw in row_text for kw in keyword_set):
             return idx
+
+        if expected_set:
+            match_ratio = len(expected_set & set(row_values)) / max(len(expected_set), 1)
+            if match_ratio >= 0.6:
+                return idx
+
     return 0
 
 
@@ -33,6 +47,7 @@ def read_excel_safe(
     path: Path,
     sheet_name: str | int | None = 0,
     expected_columns: Optional[Iterable[str]] = None,
+    header_keywords: Optional[Iterable[str]] = None,
     **kwargs,
 ) -> pd.DataFrame:
     """Leer Excel robustamente detectando header.
@@ -47,8 +62,8 @@ def read_excel_safe(
     # Leer una vista previa para detectar header
     preview = pd.read_excel(path, sheet_name=sheet_name, nrows=20, header=None)
     header_row = 0
-    if expected_columns:
-        header_row = detect_header_row(preview, expected_columns)
+    if expected_columns or header_keywords:
+        header_row = detect_header_row(preview, expected_columns, header_keywords)
 
     df = pd.read_excel(path, sheet_name=sheet_name, header=header_row, **kwargs)
     return df

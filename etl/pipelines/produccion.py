@@ -102,7 +102,7 @@ def _parse_timestamp(row: pd.Series) -> pd.Timestamp | None:
 
 
 def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-    """Procesar archivos 15-min y retornarlos particionados por mes (yyyymm)."""
+    """Procesar archivos 15-min y retornarlos particionados por timestamp real."""
 
     df = read_excel_safe(path, expected_columns=["FECHA", "HORA"])
     if df.empty:
@@ -134,12 +134,17 @@ def _process_15min(path: Path, centrales_df: pd.DataFrame) -> Dict[str, pd.DataF
     df_all = pd.concat(records, ignore_index=True)
     df_all["fecha_hora"] = pd.to_datetime(df_all["fecha_hora"], errors="coerce")
     df_all.drop_duplicates(subset=["fecha_hora", "central_id", "unidad"], inplace=True)
-    df_all["yyyymm"] = df_all["fecha_hora"].dt.strftime("%Y%m")
 
-    result: Dict[str, pd.DataFrame] = {}
-    for yyyymm, group in df_all.groupby("yyyymm"):
-        result[yyyymm] = group.drop(columns=["yyyymm"]).sort_values("fecha_hora")
-    return result
+    if df_all.empty:
+        return {}
+
+    first_ts = df_all["fecha_hora"].min()
+    last_ts = df_all["fecha_hora"].max()
+    yyyymmdd_first = first_ts.strftime("%Y%m%d") if pd.notna(first_ts) else "sin_fecha"
+    yyyymmdd_last = last_ts.strftime("%Y%m%d") if pd.notna(last_ts) else "sin_fecha"
+    partition_key = f"{yyyymmdd_first}_{yyyymmdd_last}"
+
+    return {partition_key: df_all.sort_values("fecha_hora")}
 
 
 def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[str]]]]:
@@ -170,15 +175,18 @@ def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataF
         particiones = {}
 
     if not particiones:
-        yyyymm = datetime.utcnow().strftime("%Y%m")
-        particiones[yyyymm] = pd.DataFrame(
+        partition_key = datetime.utcnow().strftime("%Y%m%d_%Y%m%d")
+        particiones[partition_key] = pd.DataFrame(
             columns=["fecha_hora", "central_id", "central", "unidad", "energia_mwh"]
         )
 
-    for yyyymm, df_part in particiones.items():
-        path = DATA_MART / OUTPUT_FILES["generacion_15min_template"].format(yyyymm=yyyymm)
+    for partition_key, df_part in particiones.items():
+        path = DATA_MART / OUTPUT_FILES["generacion_15min_template"].format(yyyymm=partition_key)
         safe_write_csv(df_part, path)
-        datasets[f"generacion_15min_{yyyymm}"] = (df_part, ["fecha_hora", "central_id", "unidad"])
+        datasets[f"generacion_15min_{partition_key}"] = (
+            df_part,
+            ["fecha_hora", "central_id", "unidad"],
+        )
 
     return historico_df, files_read, datasets
 

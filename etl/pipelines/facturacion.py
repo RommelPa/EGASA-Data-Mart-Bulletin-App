@@ -25,10 +25,42 @@ def _tidy_sheet(df: pd.DataFrame, value_name: str) -> pd.DataFrame:
     out = df.melt(id_vars=["concepto"], value_vars=month_cols, var_name="periodo", value_name=value_name)
     out["periodo"] = out["periodo"].astype(str)
     out[value_name] = pd.to_numeric(out[value_name], errors="coerce")
+
+    # Filtrar filas con concepto vacío o irrelevante
+    drop_strings = {"", "nan", "none", "ventas", "total", "sumatoria", "resumen"}
+    out["concepto_norm"] = out["concepto"].astype(str).str.strip().str.lower()
+    out = out[~out["concepto_norm"].isin(drop_strings)]
+
+    # Eliminar filas completamente vacías
+    out = out.dropna(how="all")
+
+    # Convertir meses a número si están en español abreviado
+    month_map = {
+        "enero": "01",
+        "febrero": "02",
+        "marzo": "03",
+        "abril": "04",
+        "mayo": "05",
+        "junio": "06",
+        "julio": "07",
+        "agosto": "08",
+        "septiembre": "09",
+        "setiembre": "09",
+        "octubre": "10",
+        "noviembre": "11",
+        "diciembre": "12",
+    }
+
+    def _normalize_periodo(value: str) -> str:
+        value_clean = str(value).strip().lower()
+        return month_map.get(value_clean, value)
+
+    out["periodo"] = out["periodo"].map(_normalize_periodo)
+    out = out.drop(columns=["concepto_norm"])
     return out
 
 
-def _get_sheet(path: Path, candidates: List[str]) -> pd.DataFrame:
+def _get_sheet(path: Path, candidates: List[str], header_keywords: List[str] | None = None) -> pd.DataFrame:
     try:
         xls = pd.ExcelFile(path)
     except Exception as exc:
@@ -38,7 +70,7 @@ def _get_sheet(path: Path, candidates: List[str]) -> pd.DataFrame:
     for name in candidates:
         for sheet in xls.sheet_names:
             if sheet.lower() == name.lower():
-                return read_excel_safe(path, sheet_name=sheet)
+                return read_excel_safe(path, sheet_name=sheet, header_keywords=header_keywords)
     return pd.DataFrame()
 
 
@@ -57,9 +89,14 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
     if fact_files:
         path = fact_files[0]
         files_read.append(path)
-        ventas_mwh = _tidy_sheet(_get_sheet(path, ["VENTAS (MWh)", "VENTAS MWH"]), "mwh")
-        ventas_soles = _tidy_sheet(_get_sheet(path, ["VENTAS (S)", "VENTAS S"]), "soles")
-        ingresos = _tidy_sheet(_get_sheet(path, ["Ingresos", "Balance"]), "soles")
+        ventas_mwh_sheet = _get_sheet(path, ["VENTAS (MWh)", "VENTAS MWH"], header_keywords=["cliente", "enero"])
+        ventas_mwh = _tidy_sheet(ventas_mwh_sheet, "mwh")
+
+        ventas_soles_sheet = _get_sheet(path, ["VENTAS (S)", "VENTAS S"], header_keywords=["cliente", "enero"])
+        ventas_soles = _tidy_sheet(ventas_soles_sheet, "soles")
+
+        ingresos_sheet = _get_sheet(path, ["Ingresos", "Balance"], header_keywords=["enero", "total"])
+        ingresos = _tidy_sheet(ingresos_sheet, "soles")
 
     # Calcular precio medio
     if not ventas_mwh.empty and not ventas_soles.empty:
