@@ -78,7 +78,7 @@ class DataFrameSchema:
             series = df_validated[col_name]
             if col.coerce or self.coerce:
                 series = self._coerce_series(series, col.dtype)
-                df_validated[col_name] = series
+            df_validated[col_name] = series
 
             if not col.nullable and series.isna().any():
                 na_indices = series[series.isna()].index.tolist()
@@ -89,6 +89,8 @@ class DataFrameSchema:
             for check in col.checks:
                 result = check(series)
                 if isinstance(result, pd.Series):
+                    if col.nullable:
+                        result = result | series.isna()
                     failed_idx = result.index[~result].tolist()
                     if failed_idx:
                         failures.append(
@@ -110,5 +112,9 @@ class DataFrameSchema:
 __all__ = ["DataFrameSchema", "Column", "Check", "SchemaErrors", "String", "Int64", "Float64", "DateTime"]
 
 # errors namespace compatibility
-class errors:
-    SchemaErrors = SchemaErrors
+import sys
+import types
+
+errors = types.ModuleType("pandera.errors")
+errors.SchemaErrors = SchemaErrors
+sys.modules[__name__ + ".errors"] = errors

@@ -256,8 +256,8 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
             subset=["anio", "mes", "cliente"]
         )[["periodo", "anio", "mes", "cliente", "precio_medio_soles_mwh"]]
 
-    ventas_mwh = apply_table_rules("ventas_mensual_mwh", ventas_mwh)
-    ventas_soles = apply_table_rules("ventas_mensual_soles", ventas_soles)
+    ventas_mwh = apply_table_rules("ventas_mensual_mwh", ventas_mwh_agg)
+    ventas_soles = apply_table_rules("ventas_mensual_soles", ventas_soles_agg)
     ingresos = apply_table_rules("ingresos_mensual", ingresos)
 
     validate_and_write("ventas_mensual_mwh", ventas_mwh, DATA_MART / OUTPUT_FILES["ventas_mensual_mwh"])

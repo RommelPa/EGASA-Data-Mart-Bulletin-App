@@ -187,23 +187,71 @@ def set_run_context(run_id: str, strict: bool) -> None:
     _RUN_CONTEXT["strict"] = strict
 
 
-def _write_validation_report(dataset: str, error: Exception) -> Path:
+def _summarize_failure_cases(failure_cases: pd.DataFrame, total_rows: int) -> list[dict]:
+    summaries: list[dict] = []
+    if failure_cases is None or failure_cases.empty:
+        return summaries
+
+    grouped = failure_cases.groupby(["column", "check"], dropna=False)
+    for (col, check), group in grouped:
+        indices: set[int] = set()
+        examples: list[object] = []
+
+        for _, row in group.iterrows():
+            idx_val = row.get("index")
+            if isinstance(idx_val, list):
+                indices.update(idx_val)
+            elif pd.notna(idx_val):
+                indices.add(int(idx_val))
+
+            fc_val = row.get("failure_case")
+            if len(examples) >= 3:
+                continue
+            if isinstance(fc_val, list):
+                for val in fc_val:
+                    examples.append(val)
+                    if len(examples) >= 3:
+                        break
+            else:
+                examples.append(fc_val)
+
+        rows_affected = len(indices) or len(group)
+        pct_rows = round((rows_affected / total_rows) * 100, 2) if total_rows else None
+        summaries.append(
+            {
+                "column": col,
+                "check": check,
+                "rows_affected": rows_affected,
+                "pct_rows": pct_rows,
+                "examples": examples,
+            }
+        )
+
+    summaries.sort(key=lambda x: x["rows_affected"], reverse=True)
+    return summaries
+
+
+def _write_validation_report(dataset: str, error: Exception, total_rows: int) -> tuple[Path, list[dict]]:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     run_id = _RUN_CONTEXT.get("run_id") or datetime.utcnow().strftime("%Y%m%d%H%M%S")
     safe_dataset = sanitize_filename(dataset)
     report_path = REPORTS_DIR / f"validation_{run_id}_{safe_dataset}.json"
     payload = {"dataset": dataset, "run_id": run_id, "error": str(error)}
+    summary: list[dict] = []
     try:
-        import pandera.errors as pe
+        from pandera import SchemaErrors
 
-        if isinstance(error, pe.SchemaErrors):
+        if isinstance(error, SchemaErrors):
             payload["failure_cases"] = error.failure_cases.to_dict(orient="records")
+            summary = _summarize_failure_cases(error.failure_cases, total_rows)
+            if summary:
+                payload["summary"] = summary
     except Exception:
         pass
 
     with report_path.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
-    return report_path
+    return report_path, summary
 
 
 def validate_and_write(dataset: str, df: pd.DataFrame, path: Path) -> int:
@@ -222,8 +270,16 @@ def validate_and_write(dataset: str, df: pd.DataFrame, path: Path) -> int:
     try:
         validated = schema.validate(df, lazy=True)
     except Exception as exc:  # pandera SchemaErrors o similares
-        report = _write_validation_report(dataset, exc)
-        msg = f"Validación falló para {dataset}. Reporte: {report}"
+        report, summary = _write_validation_report(dataset, exc, total_rows=len(df))
+        summary_txt = ""
+        if summary:
+            top = summary[:3]
+            formatted = []
+            for item in top:
+                pct = f"{item['pct_rows']}%" if item.get("pct_rows") is not None else "n/a"
+                formatted.append(f"{item['column']}[{item['check']}] {item['rows_affected']} filas ({pct})")
+            summary_txt = " | Top errores: " + "; ".join(formatted)
+        msg = f"Validación falló para {dataset}. Reporte: {report}{summary_txt}"
         if strict:
             logger.error(msg)
             raise
