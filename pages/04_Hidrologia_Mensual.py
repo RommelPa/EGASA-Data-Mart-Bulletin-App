@@ -1,7 +1,16 @@
-import streamlit as st
-import plotly.express as px
 import pandas as pd
+import plotly.express as px
+import streamlit as st
 
+from app.charts.theme import (
+    AxisFormat,
+    PLOTLY_CONFIG,
+    apply_exec_style,
+    apply_soft_markers,
+    apply_thin_lines,
+    apply_unified_hover,
+    format_axis_units,
+)
 from utils.data import load_csv
 from utils.filters import sidebar_periodo_selector, filter_by_periodo, ensure_periodo_str
 
@@ -41,17 +50,51 @@ if not vol_f.empty:
 
     df = vol_f[vol_f["reservorio"].isin(sel)].copy()
     df["fecha_mes"] = pd.to_datetime(df["periodo"] + "01", format="%Y%m%d", errors="coerce")
+    df["volumen_mm3"] = df["volumen_000m3"] / 1_000
 
-    fig = px.line(df, x="fecha_mes", y="volumen_000m3", color="reservorio", title="Volumen mensual por reservorio")
-    st.plotly_chart(fig, use_container_width=True)
+    fig = px.line(df, x="fecha_mes", y="volumen_mm3", color="reservorio", title="Volumen mensual por reservorio")
+    apply_thin_lines(fig)
+    apply_soft_markers(fig)
+    apply_unified_hover(fig, fmt=":,.2f", units="millones de m³")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Fecha", tickformat="%d %b %Y"),
+        y=AxisFormat(title="Volumen útil (millones de m³)", tickformat=",.2f"),
+    )
+    apply_exec_style(
+        fig,
+        title="Volumen útil por reservorio",
+        subtitle="Serie mensual — unidades en millones de m³",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     st.markdown("### Comparativo YoY (mismo mes, por año)")
     df["anio"] = df["periodo"].str[:4].astype(int)
     df["mes"] = df["periodo"].str[4:6].astype(int)
     mes_sel = st.selectbox("Mes", sorted(df["mes"].unique()))
-    yoy = df[df["mes"] == mes_sel].groupby(["anio", "reservorio"])["volumen_000m3"].mean().reset_index()
-    st.plotly_chart(px.line(yoy, x="anio", y="volumen_000m3", color="reservorio", title=f"YoY Volumen (mes={mes_sel})"),
-                    use_container_width=True)
+    yoy = (
+        df[df["mes"] == mes_sel]
+        .groupby(["anio", "reservorio"])["volumen_mm3"]
+        .mean()
+        .reset_index()
+    )
+    fig_yoy = px.line(yoy, x="anio", y="volumen_mm3", color="reservorio", title=f"YoY Volumen (mes={mes_sel})")
+    apply_thin_lines(fig_yoy)
+    apply_soft_markers(fig_yoy)
+    apply_unified_hover(fig_yoy, fmt=":,.2f", units="millones de m³")
+    format_axis_units(
+        fig_yoy,
+        x=AxisFormat(title="Año", tickformat="d"),
+        y=AxisFormat(title="Volumen útil (millones de m³)", tickformat=",.2f"),
+    )
+    apply_exec_style(
+        fig_yoy,
+        title="Comparativo YoY de volumen útil",
+        subtitle=f"Mes seleccionado: {mes_sel}",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig_yoy, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay datos de volumen en el rango seleccionado.")
 
@@ -61,6 +104,20 @@ if not cau_f.empty:
     df = cau_f.copy()
     df["fecha_mes"] = pd.to_datetime(df["periodo"] + "01", format="%Y%m%d", errors="coerce")
     fig = px.line(df, x="fecha_mes", y="caudal_m3s", color="estacion", title="Caudal mensual")
-    st.plotly_chart(fig, use_container_width=True)
+    apply_thin_lines(fig)
+    apply_soft_markers(fig)
+    apply_unified_hover(fig, fmt=":,.2f", units="m³/s")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Fecha", tickformat="%d %b %Y"),
+        y=AxisFormat(title="Caudal (m³/s)", tickformat=",.2f"),
+    )
+    apply_exec_style(
+        fig,
+        title="Caudal mensual por estación",
+        subtitle="Serie mensual — m³/s",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay datos de caudal en el rango seleccionado.")

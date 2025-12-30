@@ -1,7 +1,8 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
+from app.charts.theme import AxisFormat, PLOTLY_CONFIG, apply_exec_style, format_axis_units
 from utils.data import load_csv
 
 st.set_page_config(layout="wide")
@@ -55,6 +56,18 @@ if inicio_col and fin_col:
             title="Vigencias (timeline)",
         )
         fig.update_yaxes(autorange="reversed")
-        st.plotly_chart(fig, use_container_width=True)
+        format_axis_units(
+            fig,
+            x=AxisFormat(title="Vigencia", tickformat="%d %b %Y"),
+            y=AxisFormat(title="Cliente"),
+        )
+        apply_exec_style(
+            fig,
+            title="Vigencias de contratos",
+            subtitle="Inicio y fin declarados",
+            source="EGASA · Data Mart",
+            hovermode="closest",
+        )
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No se detectaron columnas de inicio/fin para graficar timeline.")

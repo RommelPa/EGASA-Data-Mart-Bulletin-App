@@ -1,9 +1,17 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
+from app.charts.theme import (
+    AxisFormat,
+    PLOTLY_CONFIG,
+    apply_exec_style,
+    apply_thin_lines,
+    apply_unified_hover,
+    format_axis_units,
+)
 from utils.data import load_csv
-from utils.filters import sidebar_periodo_selector, filter_by_periodo, ensure_periodo_str
+from utils.filters import ensure_periodo_str, filter_by_periodo, sidebar_periodo_selector
 
 st.set_page_config(layout="wide")
 st.title("⚖️ Balance de Energía (Perfil + R)")
@@ -47,13 +55,38 @@ if not perfil_f.empty:
         color="concepto",
         title="Balance mensual (MWh) — positivos vs negativos",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    apply_unified_hover(fig, fmt=":,.0f", units="MWh")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Periodo"),
+        y=AxisFormat(title="Energía (MWh)", tickformat=",.0f"),
+    )
+    apply_exec_style(
+        fig,
+        title="Balance mensual (positivos vs negativos)",
+        subtitle="Componentes del perfil (MWh)",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     # líneas clave si existen
     claves = df[df["concepto"].str.upper().isin({"ENERGIA DISPONIBLE", "VENTA DE ENERGIA"})].copy()
     if not claves.empty:
         fig2 = px.line(claves, x="periodo", y="energia_mwh", color="concepto", title="Líneas clave (MWh)")
-        st.plotly_chart(fig2, use_container_width=True)
+        apply_thin_lines(fig2)
+        apply_unified_hover(fig2, fmt=":,.0f", units="MWh")
+        format_axis_units(
+            fig2,
+            x=AxisFormat(title="Periodo"),
+            y=AxisFormat(title="Energía (MWh)", tickformat=",.0f"),
+        )
+        apply_exec_style(
+            fig2,
+            title="Líneas clave del balance",
+            subtitle="Energía disponible vs venta de energía",
+            source="EGASA · Data Mart",
+        )
+        st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("Sin datos de Perfil en el rango seleccionado.")
 
@@ -62,10 +95,36 @@ st.markdown("## 2) R (ventas por segmento)")
 if not r_f.empty:
     df = r_f.copy()
     fig = px.bar(df, x="periodo", y="energia_mwh", color="segmento", title="Ventas por segmento (MWh)")
-    st.plotly_chart(fig, use_container_width=True)
+    apply_unified_hover(fig, fmt=":,.0f", units="MWh")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Periodo"),
+        y=AxisFormat(title="Energía (MWh)", tickformat=",.0f"),
+    )
+    apply_exec_style(
+        fig,
+        title="Ventas por segmento",
+        subtitle="Mercado R mensual",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     total = df[df["segmento"].str.upper().eq("TOTAL")].groupby("periodo")["energia_mwh"].sum().reset_index()
     if not total.empty:
-        st.plotly_chart(px.line(total, x="periodo", y="energia_mwh", title="Ventas Total (MWh)"), use_container_width=True)
+        fig_total = px.line(total, x="periodo", y="energia_mwh", title="Ventas Total (MWh)")
+        apply_thin_lines(fig_total)
+        apply_unified_hover(fig_total, fmt=":,.0f", units="MWh")
+        format_axis_units(
+            fig_total,
+            x=AxisFormat(title="Periodo"),
+            y=AxisFormat(title="Energía (MWh)", tickformat=",.0f"),
+        )
+        apply_exec_style(
+            fig_total,
+            title="Ventas totales mensuales",
+            subtitle="Energía vendida (MWh)",
+            source="EGASA · Data Mart",
+        )
+        st.plotly_chart(fig_total, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("Sin datos de R en el rango seleccionado.")
