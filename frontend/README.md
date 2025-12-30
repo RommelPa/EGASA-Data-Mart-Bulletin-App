@@ -1,6 +1,6 @@
 # Frontend placeholder (Vite/TypeScript)
 
-El dashboard operativo se sirve hoy con **Streamlit** (`app.py` y `pages/`). Este
+El dashboard operativo se sirve hoy con **Streamlit** (`streamlit_app.py` y `pages/`). Este
 directorio guarda un esqueleto Vite/TypeScript que no está en uso activo.
 
 Si necesitas levantarlo:
