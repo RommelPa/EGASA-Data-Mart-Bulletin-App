@@ -88,7 +88,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "rename": {},
         },
         "ingresos_mensual": {
-            "required_columns": ["mes_raw", "cliente_o_concepto"],
+            "required_columns": ["anio", "mes", "cliente_o_concepto", "soles"],
             "rename": {},
         },
         "represas_diario": {
