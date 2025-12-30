@@ -7,7 +7,14 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from app.charts.theme import AxisFormat, apply_exec_style, apply_soft_markers, apply_thin_lines, format_axis_units
+from app.charts.theme import (
+    AxisFormat,
+    PLOTLY_CONFIG,
+    apply_exec_style,
+    apply_soft_markers,
+    apply_thin_lines,
+    format_axis_units,
+)
 
 
 def kpi(col, label: str, value: str):
@@ -41,7 +48,7 @@ def line_chart(
         y=AxisFormat(title=y_label or title, tickformat=y_format),
     )
     apply_exec_style(fig, title=title, subtitle=subtitle or "Tendencia mensual", source=source)
-    container.plotly_chart(fig, use_container_width=True)
+    container.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
 
 def bar_chart(
@@ -69,4 +76,4 @@ def bar_chart(
         y=AxisFormat(title=y_label or (title or y), tickformat=y_format),
     )
     apply_exec_style(fig, title=title or "", subtitle=subtitle or "Distribución por periodo", source=source)
-    container.plotly_chart(fig, use_container_width=True)
+    container.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)

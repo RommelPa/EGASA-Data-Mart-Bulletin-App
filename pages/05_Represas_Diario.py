@@ -6,6 +6,7 @@ import streamlit as st
 from app.charts.theme import (
     AxisFormat,
     EXEC_THEME,
+    PLOTLY_CONFIG,
     apply_exec_style,
     apply_soft_markers,
     apply_thin_lines,
@@ -61,7 +62,7 @@ if "pct_llenado" in df.columns:
         subtitle=f"Corte: {fecha_sel}",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
 # Tabla operativa
 st.markdown("### Tabla operativa")
@@ -126,7 +127,7 @@ if not hist.empty:
         subtitle=f"{reservorio_sel} — {short_spanish_date(hist['fecha'].min())} a {short_spanish_date(hist['fecha'].max())}",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig_dual, use_container_width=True)
+    st.plotly_chart(fig_dual, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("Sin historial para el reservorio seleccionado.")
 

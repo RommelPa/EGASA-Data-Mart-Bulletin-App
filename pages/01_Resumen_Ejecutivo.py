@@ -1,7 +1,7 @@
 import streamlit as st
 import plotly.express as px
 
-from app.charts.theme import AxisFormat, apply_exec_style, apply_soft_markers, apply_thin_lines, format_axis_units
+from app.charts.theme import AxisFormat, PLOTLY_CONFIG, apply_exec_style, apply_soft_markers, apply_thin_lines, format_axis_units
 from app.ui_components import kpi, line_chart, bar_chart
 from utils.data import load_csv, load_centrales, metadata_token
 from utils.filters import sidebar_periodo_selector, filter_by_periodo
@@ -77,7 +77,7 @@ if mix is not None and not mix.empty:
         source="EGASA · Data Mart",
         hovermode="closest",
     )
-    c2.plotly_chart(fig, use_container_width=True)
+    c2.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
 c3, c4 = st.columns(2)
 
@@ -110,4 +110,4 @@ if not rep.empty and "pct_llenado" in rep.columns:
         source="EGASA · Data Mart",
         hovermode="x unified",
     )
-    c4.plotly_chart(fig, use_container_width=True)
+    c4.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)

@@ -4,6 +4,7 @@ import streamlit as st
 
 from app.charts.theme import (
     AxisFormat,
+    PLOTLY_CONFIG,
     apply_exec_style,
     apply_soft_markers,
     apply_thin_lines,
@@ -66,7 +67,7 @@ if not vol_f.empty:
         subtitle="Serie mensual — unidades en millones de m³",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     st.markdown("### Comparativo YoY (mismo mes, por año)")
     df["anio"] = df["periodo"].str[:4].astype(int)
@@ -93,7 +94,7 @@ if not vol_f.empty:
         subtitle=f"Mes seleccionado: {mes_sel}",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig_yoy, use_container_width=True)
+    st.plotly_chart(fig_yoy, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay datos de volumen en el rango seleccionado.")
 
@@ -117,6 +118,6 @@ if not cau_f.empty:
         subtitle="Serie mensual — m³/s",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay datos de caudal en el rango seleccionado.")

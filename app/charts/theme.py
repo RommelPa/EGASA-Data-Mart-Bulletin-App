@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, MutableMapping, Sequence
+from typing import Mapping, MutableMapping
 
 import plotly.graph_objects as go
 
@@ -18,6 +18,8 @@ EXEC_THEME = {
     "accent": "#8393B9",
     "hover_bg": "#F3F6FB",
 }
+
+PLOTLY_CONFIG = {"locale": "es", "displayModeBar": False}
 
 
 SPANISH_MONTH_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -132,7 +134,7 @@ def apply_exec_style(
             "font_size": 13,
             "font_family": EXEC_THEME["font_family"],
         },
-        locale="es",
+        separators=",.",
         legend={
             "orientation": "h",
             "yanchor": "bottom",

@@ -4,6 +4,7 @@ import streamlit as st
 
 from app.charts.theme import (
     AxisFormat,
+    PLOTLY_CONFIG,
     apply_exec_style,
     apply_soft_markers,
     apply_thin_lines,
@@ -69,7 +70,7 @@ apply_exec_style(
     subtitle=f"Energía por intervalo — {short_spanish_date(df_dia['fecha_hora'].iloc[0])}",
     source="EGASA · Data Mart",
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
 st.markdown("### Agregado horario")
 df_dia["hora"] = df_dia["fecha_hora"].dt.floor("H")
@@ -84,7 +85,7 @@ format_axis_units(
     y=AxisFormat(title="Energía (MWh)", tickformat=",.2f"),
 )
 apply_exec_style(fig_h, title="Energía por hora", subtitle="Promedio por intervalo horario", source="EGASA · Data Mart")
-st.plotly_chart(fig_h, use_container_width=True)
+st.plotly_chart(fig_h, use_container_width=True, config=PLOTLY_CONFIG)
 
 st.markdown("### Comparación Día vs Día")
 dia2 = st.sidebar.selectbox("Comparar con", dias, index=max(0, len(dias) - 2))
@@ -117,4 +118,4 @@ apply_exec_style(
     subtitle="Energía consolidada por día",
     source="EGASA · Data Mart",
 )
-st.plotly_chart(fig_comp, use_container_width=True)
+st.plotly_chart(fig_comp, use_container_width=True, config=PLOTLY_CONFIG)

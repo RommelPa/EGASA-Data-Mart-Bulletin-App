@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from app.charts.theme import AxisFormat, apply_exec_style, format_axis_units
+from app.charts.theme import AxisFormat, PLOTLY_CONFIG, apply_exec_style, format_axis_units
 from utils.data import load_csv
 
 st.set_page_config(layout="wide")
@@ -68,6 +68,6 @@ if inicio_col and fin_col:
             source="EGASA · Data Mart",
             hovermode="closest",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No se detectaron columnas de inicio/fin para graficar timeline.")
