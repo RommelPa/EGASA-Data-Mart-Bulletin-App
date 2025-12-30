@@ -1,7 +1,0 @@
-
-pandas
-openpyxl
-streamlit
-plotly
-pytest
-python-dotenv

@@ -10,8 +10,8 @@ from typing import Dict, Iterable, List, Tuple
 
 import pandas as pd
 
-from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES
-from ..utils_io import list_matching_files, read_excel_safe, safe_write_csv
+from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES, get_source
+from ..utils_io import list_matching_files, read_excel_safe, apply_table_rules, validate_and_write
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,7 @@ def run_contratos() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[
     files_read: List[Path] = []
     datasets: Dict[str, Tuple[pd.DataFrame, Iterable[str]]] = {}
 
+    contratos_cfg = get_source("contratos")
     contrato_files = list_matching_files(DATA_LANDING, LANDING_FILES["contratos"])
     base_df = pd.DataFrame(columns=["cliente", "tipo", "fecha_inicio", "fecha_fin", "energia_mwh", "precio"])
     riesgo_df = pd.DataFrame(columns=["cliente", "tipo", "fecha_inicio", "fecha_fin", "energia_mwh", "precio"])
@@ -87,20 +88,26 @@ def run_contratos() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable[
     if contrato_files:
         path = contrato_files[0]
         files_read.append(path)
+        source_cfg = get_source("contratos")
+        sheets = (source_cfg or {}).get("sheets", {})
+
         try:
-            base_df = _clean_contracts(_load_sheet(path, "CONTRATOS BASE DATOS"))
-            riesgo_df = _clean_contracts(_load_sheet(path, "RIESGO"))
+            base_df = _clean_contracts(_load_sheet(path, sheets.get("base", "CONTRATOS BASE DATOS")))
+            riesgo_df = _clean_contracts(_load_sheet(path, sheets.get("riesgo", "RIESGO")))
         except Exception:
             logger.exception("Error procesando contratos en %s", path)
-            raise
+            raise ValueError(f"No se pudieron procesar hojas de contratos definidas en {path.name}")
 
-    safe_write_csv(base_df, DATA_MART / OUTPUT_FILES["contratos_base"])
+    elif (contratos_cfg or {}).get("required", True):
+        raise FileNotFoundError(f"No se encontró archivo de contratos en {DATA_LANDING}")
+
+    base_df = apply_table_rules("contratos_base", base_df)
+    riesgo_df = apply_table_rules("contratos_riesgo", riesgo_df)
+
+    validate_and_write("contratos_base", base_df, DATA_MART / OUTPUT_FILES["contratos_base"])
     datasets["contratos_base"] = (base_df, ["cliente", "fecha_inicio"])
 
-    if not riesgo_df.empty:
-        safe_write_csv(riesgo_df, DATA_MART / OUTPUT_FILES["contratos_riesgo"])
-    else:
-        safe_write_csv(riesgo_df, DATA_MART / OUTPUT_FILES["contratos_riesgo"])
+    validate_and_write("contratos_riesgo", riesgo_df, DATA_MART / OUTPUT_FILES["contratos_riesgo"])
     datasets["contratos_riesgo"] = (riesgo_df, ["cliente", "fecha_inicio"])
 
     return files_read, datasets

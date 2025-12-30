@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "egasa-etl"
+version = "0.1.0"
+description = "ETL y dashboard Streamlit para EGASA"
+authors = [{name = "EGASA Data"}]
+requires-python = ">=3.10"
+dependencies = [
+    "pandas==2.2.2",
+    "openpyxl==3.1.5",
+    "streamlit==1.38.0",
+    "plotly==5.24.0",
+    "pytest==8.3.3",
+    "python-dotenv==1.0.1",
+    "PyYAML==6.0.2",
+    "pandera==0.20.3",
+]
+
+[project.scripts]
+egasa-etl = "etl.run_etl:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true

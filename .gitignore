@@ -7,6 +7,18 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Datos locales (evitar subir datos sensibles/privados)
+data_landing/
+data_mart/
+data_reference/
+logs/
+*.parquet
+__pycache__/
+*.pyc
+reports/
+.env
+.venv/
+
 node_modules
 dist
 dist-ssr

@@ -9,8 +9,19 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 import pandas as pd
+import re
 
+from .config import table_rules, REPORTS_DIR, LOGS_DIR
+from etl.schemas import get_schema
+import json
+from datetime import datetime
 logger = logging.getLogger(__name__)
+
+_RUN_CONTEXT: dict = {
+    "run_id": None,
+    "strict": True,
+    "run_log_path": None,
+}
 
 
 def detect_header_row(
@@ -72,11 +83,23 @@ def read_excel_safe(
 
 
 def list_matching_files(base_dir: Path, pattern: str) -> List[Path]:
-    """Listar archivos que contengan el patrón en su nombre."""
+    """Listar archivos que cumplan el patrón (substring o regex)."""
 
     if not base_dir.exists():
         return []
-    return sorted([p for p in base_dir.iterdir() if pattern.lower() in p.name.lower()])
+
+    compiled: re.Pattern[str] | None = None
+    try:
+        compiled = re.compile(pattern, flags=re.IGNORECASE)
+    except re.error:
+        compiled = None
+
+    def _match(path: Path) -> bool:
+        if compiled:
+            return bool(compiled.search(path.name))
+        return pattern.lower() in path.name.lower()
+
+    return sorted([p for p in base_dir.iterdir() if _match(p)])
 
 
 def safe_write_csv(df: pd.DataFrame, path: Path) -> int:
@@ -98,10 +121,130 @@ def record_file_info(files: Iterable[Path]) -> List[Tuple[str, float, int]]:
     return info
 
 
+def apply_table_rules(dataset: str, df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aplica reglas declaradas en config.yml/config.toml:
+    - renombrado de columnas
+    - validación de columnas obligatorias
+    """
+
+    rules = table_rules(dataset)
+    if not rules:
+        return df
+
+    rename_map = rules.get("rename") or {}
+    required = rules.get("required_columns") or []
+
+    out = df.rename(columns=rename_map) if rename_map else df
+
+    missing = [col for col in required if col not in out.columns]
+    if missing:
+        raise ValueError(f"Tabla '{dataset}': faltan columnas requeridas {missing}")
+
+    return out
+
+
+def set_run_context(run_id: str, strict: bool) -> None:
+    """Registrar contexto global para reportes de validación."""
+
+    _RUN_CONTEXT["run_id"] = run_id
+    _RUN_CONTEXT["strict"] = strict
+
+
+def _write_validation_report(dataset: str, error: Exception) -> Path:
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    run_id = _RUN_CONTEXT.get("run_id") or datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    report_path = REPORTS_DIR / f"validation_{run_id}_{dataset}.json"
+    payload = {"dataset": dataset, "run_id": run_id, "error": str(error)}
+    try:
+        import pandera.errors as pe
+
+        if isinstance(error, pe.SchemaErrors):
+            payload["failure_cases"] = error.failure_cases.to_dict(orient="records")
+    except Exception:
+        pass
+
+    with report_path.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+    return report_path
+
+
+def validate_and_write(dataset: str, df: pd.DataFrame, path: Path) -> int:
+    """Valida (pandera) y escribe CSV. En modo estricto, falla si hay errores."""
+
+    schema = get_schema(dataset)
+    strict = bool(_RUN_CONTEXT.get("strict", True))
+
+    if schema is None:
+        return safe_write_csv(df, path)
+
+    if df.empty:
+        # No validamos datasets vacíos; solo escribimos para mantener contratos de salida.
+        return safe_write_csv(df, path)
+
+    try:
+        validated = schema.validate(df, lazy=True)
+    except Exception as exc:  # pandera SchemaErrors o similares
+        report = _write_validation_report(dataset, exc)
+        msg = f"Validación falló para {dataset}. Reporte: {report}"
+        if strict:
+            logger.error(msg)
+            raise
+        logger.warning(msg)
+        # modo non-strict: escribir de todos modos
+        return safe_write_csv(df, path)
+
+    return safe_write_csv(validated, path)
+
+
+def default_log_extra(**kwargs) -> dict:
+    """Construye extras de logging con run_id y placeholders."""
+
+    extra_defaults = {
+        "run_id": _RUN_CONTEXT.get("run_id"),
+        "stage": "-",
+        "file": "-",
+        "rows_in": "-",
+        "rows_out": "-",
+        "duration_ms": "-",
+    }
+    extra_defaults.update(kwargs)
+    return extra_defaults
+
+
+def ensure_runs_log() -> Path:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    path = LOGS_DIR / "etl_runs.jsonl"
+    _RUN_CONTEXT["run_log_path"] = path
+    return path
+
+
+def record_etl_run(run_id: str, started_at: str, finished_at: str, status: str, tables: dict, warnings: list[str] | None = None, error: str | None = None) -> Path:
+    """Append run metadata to etl_runs.jsonl."""
+
+    path = ensure_runs_log()
+    payload = {
+        "run_id": run_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "status": status,
+        "tables": tables,
+        "warnings": warnings or [],
+    }
+    if error:
+        payload["error"] = error
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    return path
+
+
 __all__ = [
     "detect_header_row",
     "read_excel_safe",
     "list_matching_files",
     "safe_write_csv",
     "record_file_info",
+    "apply_table_rules",
+    "validate_and_write",
+    "set_run_context",
 ]

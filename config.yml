@@ -1,0 +1,53 @@
+# Configuración declarativa del ETL EGASA
+# Duplica o ajusta rutas/patrones según tu entorno local.
+
+paths:
+  input: data_landing        # Carpeta con Excels/landing
+  output: data_mart          # Carpeta donde se escriben los CSV finales
+  reference: data_reference  # Archivos maestros (ej. centrales_egasa.csv)
+  logs: logs                 # Carpeta de logs
+
+sources:
+  produccion_historica:
+    pattern: "PRODUCCION EGASA DESDE 2010"
+  produccion_15min:
+    pattern: "PRODUCCIÓN DE ENERGÍA"
+  hidrologia_control:
+    pattern: "Control Hidrológico.xlsx"
+    sheets:
+      volumen: ["AB", "EF", "EP", "PI", "CH", "BA", "TOTAL"]
+      caudal: ["CAUDAL"]
+  hidrologia_represas:
+    pattern: "BDREPRESAS.xlsx"
+    sheet: "INFORMEDIARIO"
+  facturacion:
+    pattern: "Facturacion"
+    sheets:
+      ventas_mwh: "VENTAS (MWh)"
+      ventas_soles: "VENTAS (S)"
+      ingresos: "Ingresos"  # Si cambia el nombre de la hoja, ajusta aquí
+  contratos:
+    pattern: "Revision de Volumen Optimo"
+    sheets:
+      base: "CONTRATOS BASE DATOS"
+      riesgo: "RIESGO"
+  balance_energia:
+    pattern: "balance 2025"
+    sheets:
+      perfil: "Perfil"
+      r: "R"
+
+# Reglas por tabla de salida (rename + columnas obligatorias)
+tables:
+  ventas_mensual_mwh:
+    required_columns: ["cliente", "periodo"]
+  ventas_mensual_soles:
+    required_columns: ["cliente", "periodo"]
+  ingresos_mensual:
+    required_columns: ["anio", "mes", "cliente_o_concepto", "soles"]
+  represas_diario:
+    required_columns: ["fecha", "reservorio"]
+  contratos_base:
+    required_columns: ["cliente", "fecha_inicio", "fecha_fin"]
+  contratos_riesgo:
+    required_columns: ["cliente", "fecha_inicio", "fecha_fin"]

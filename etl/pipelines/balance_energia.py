@@ -10,8 +10,8 @@ from typing import Dict, Iterable, List, Tuple
 
 import pandas as pd
 
-from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES
-from ..utils_io import list_matching_files, safe_write_csv
+from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES, get_source
+from ..utils_io import list_matching_files, validate_and_write
 
 logger = logging.getLogger(__name__)
 
@@ -194,13 +194,16 @@ def run_balance_energia() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Ite
     files_read: List[Path] = []
     datasets: Dict[str, Tuple[pd.DataFrame, Iterable[str]]] = {}
 
+    source_cfg = get_source("balance_energia")
     balance_files = list_matching_files(DATA_LANDING, LANDING_FILES["balance_energia"])
     if not balance_files:
-        logger.info("No se encontró archivo balance en data_landing.")
+        if (source_cfg or {}).get("required", True):
+            raise FileNotFoundError(f"No se encontró archivo de balance de energía en {DATA_LANDING}")
+        logger.info("No se encontró archivo balance en data_landing (no requerido).")
         empty1 = pd.DataFrame(columns=["periodo", "fecha_mes", "concepto", "energia_mwh", "energia_gwh"])
         empty2 = pd.DataFrame(columns=["periodo", "fecha_mes", "segmento", "energia_mwh"])
-        safe_write_csv(empty1, DATA_MART / OUTPUT_FILES["balance_perfil_mensual"])
-        safe_write_csv(empty2, DATA_MART / OUTPUT_FILES["balance_r_mensual"])
+        validate_and_write("balance_perfil_mensual", empty1, DATA_MART / OUTPUT_FILES["balance_perfil_mensual"])
+        validate_and_write("balance_r_mensual", empty2, DATA_MART / OUTPUT_FILES["balance_r_mensual"])
         datasets["balance_perfil_mensual"] = (empty1, ["periodo", "concepto"])
         datasets["balance_r_mensual"] = (empty2, ["periodo", "segmento"])
         return files_read, datasets
@@ -211,8 +214,8 @@ def run_balance_energia() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Ite
     perfil_df = _process_perfil(path)
     r_df = _process_r(path)
 
-    safe_write_csv(perfil_df, DATA_MART / OUTPUT_FILES["balance_perfil_mensual"])
-    safe_write_csv(r_df, DATA_MART / OUTPUT_FILES["balance_r_mensual"])
+    validate_and_write("balance_perfil_mensual", perfil_df, DATA_MART / OUTPUT_FILES["balance_perfil_mensual"])
+    validate_and_write("balance_r_mensual", r_df, DATA_MART / OUTPUT_FILES["balance_r_mensual"])
 
     datasets["balance_perfil_mensual"] = (perfil_df, ["periodo", "concepto"])
     datasets["balance_r_mensual"] = (r_df, ["periodo", "segmento"])
