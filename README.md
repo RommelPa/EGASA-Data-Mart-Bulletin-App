@@ -39,7 +39,7 @@ Coloque los archivos Excel originales en la carpeta `./data_landing/`. El ETL es
 
 2. **Ejecutar Dashboard**:
    ```bash
-   streamlit run app/main.py
+   streamlit run streamlit_app.py
    ```
 
 ## Troubleshooting
