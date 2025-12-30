@@ -3,6 +3,7 @@ import streamlit as st
 
 from app.charts.theme import (
     AxisFormat,
+    PLOTLY_CONFIG,
     apply_exec_style,
     apply_soft_markers,
     apply_thin_lines,
@@ -44,7 +45,7 @@ apply_exec_style(
     subtitle="Energia generada por periodo (MWh)",
     source="EGASA · Data Mart",
 )
-st.plotly_chart(fig_total, use_container_width=True)
+st.plotly_chart(fig_total, use_container_width=True, config=PLOTLY_CONFIG)
 
 st.markdown("### 2) Por central (Top N)")
 top_n = st.sidebar.slider("Top N centrales", 3, 12, 9)
@@ -64,7 +65,7 @@ apply_exec_style(
     subtitle="Ordenadas por aporte acumulado",
     source="EGASA · Data Mart",
 )
-st.plotly_chart(fig_top, use_container_width=True)
+st.plotly_chart(fig_top, use_container_width=True, config=PLOTLY_CONFIG)
 
 st.markdown("### 3) Mix Hidro vs Térmica")
 if not centrales.empty:
@@ -83,7 +84,7 @@ if not centrales.empty:
         subtitle="Hidro vs Térmica",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig_mix, use_container_width=True)
+    st.plotly_chart(fig_mix, use_container_width=True, config=PLOTLY_CONFIG)
 
 st.markdown("### 4) Estacionalidad (heatmap)")
 gen["anio"] = gen["periodo"].astype(str).str[:4].astype(int)
@@ -102,4 +103,4 @@ apply_exec_style(
     source="EGASA · Data Mart",
     hovermode="closest",
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)

@@ -6,6 +6,7 @@ import streamlit as st
 
 from app.charts.theme import (
     AxisFormat,
+    PLOTLY_CONFIG,
     apply_exec_style,
     apply_soft_markers,
     apply_thin_lines,
@@ -168,7 +169,7 @@ if "ventas_mwh" in base.columns and base["ventas_mwh"].notna().any():
         subtitle="Energía (MWh) consolidada",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay ventas para cruzar (ventas_mensual_mwh).")
 
@@ -182,6 +183,7 @@ if "caudal_m3s" in base.columns and base["caudal_m3s"].notna().any():
     c1.plotly_chart(
         scatter_with_fit(base, "caudal_m3s", "gen_mwh", "Caudal vs Generación"),
         use_container_width=True,
+        config=PLOTLY_CONFIG,
     )
 else:
     c1.info("Sin caudal para el rango.")
@@ -190,6 +192,7 @@ if "volumen_millones_m3" in base.columns and base["volumen_millones_m3"].notna()
     c2.plotly_chart(
         scatter_with_fit(base.rename(columns={"volumen_millones_m3": "Volumen útil (Mm³)"}), "Volumen útil (Mm³)", "gen_mwh", "Volumen útil vs Generación"),
         use_container_width=True,
+        config=PLOTLY_CONFIG,
     )
 else:
     c2.info("Sin volumen para el rango.")
@@ -214,6 +217,6 @@ if "precio_medio" in base.columns and base["precio_medio"].notna().any():
         subtitle="Soles por MWh",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay precio medio para el rango.")

@@ -2,7 +2,14 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from app.charts.theme import AxisFormat, apply_exec_style, apply_thin_lines, apply_unified_hover, format_axis_units
+from app.charts.theme import (
+    AxisFormat,
+    PLOTLY_CONFIG,
+    apply_exec_style,
+    apply_thin_lines,
+    apply_unified_hover,
+    format_axis_units,
+)
 from utils.data import load_csv
 from utils.filters import ensure_periodo_str, filter_by_periodo, sidebar_periodo_selector
 
@@ -60,7 +67,7 @@ if not perfil_f.empty:
         subtitle="Componentes del perfil (MWh)",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     # líneas clave si existen
     claves = df[df["concepto"].str.upper().isin({"ENERGIA DISPONIBLE", "VENTA DE ENERGIA"})].copy()
@@ -79,7 +86,7 @@ if not perfil_f.empty:
             subtitle="Energía disponible vs venta de energía",
             source="EGASA · Data Mart",
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("Sin datos de Perfil en el rango seleccionado.")
 
@@ -100,7 +107,7 @@ if not r_f.empty:
         subtitle="Mercado R mensual",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     total = df[df["segmento"].str.upper().eq("TOTAL")].groupby("periodo")["energia_mwh"].sum().reset_index()
     if not total.empty:
@@ -118,6 +125,6 @@ if not r_f.empty:
             subtitle="Energía vendida (MWh)",
             source="EGASA · Data Mart",
         )
-        st.plotly_chart(fig_total, use_container_width=True)
+        st.plotly_chart(fig_total, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("Sin datos de R en el rango seleccionado.")

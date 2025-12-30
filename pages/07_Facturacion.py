@@ -4,6 +4,7 @@ import streamlit as st
 
 from app.charts.theme import (
     AxisFormat,
+    PLOTLY_CONFIG,
     apply_exec_style,
     apply_soft_markers,
     apply_thin_lines,
@@ -74,7 +75,7 @@ if not ventas_mwh_f.empty:
         subtitle="Energía vendida (MWh)",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     # top clientes
     top_n = st.sidebar.slider("Top N clientes", 5, 30, 10)
@@ -92,7 +93,7 @@ if not ventas_mwh_f.empty:
         subtitle="Ordenado por MWh acumulados",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig_top, use_container_width=True)
+    st.plotly_chart(fig_top, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay ventas_mensual_mwh en el rango.")
 
@@ -116,7 +117,7 @@ if not precio_f.empty:
         subtitle="Soles por MWh",
         source="EGASA · Data Mart",
     )
-    st.plotly_chart(fig_precio, use_container_width=True)
+    st.plotly_chart(fig_precio, use_container_width=True, config=PLOTLY_CONFIG)
 
     # dispersión por cliente (último periodo)
     last_p = precio_f["periodo"].max()
@@ -136,7 +137,7 @@ if not precio_f.empty:
             source="EGASA · Data Mart",
             hovermode="closest",
         )
-        st.plotly_chart(fig_disp, use_container_width=True)
+        st.plotly_chart(fig_disp, use_container_width=True, config=PLOTLY_CONFIG)
 else:
     st.info("No hay precio_medio_mensual en el rango.")
 
