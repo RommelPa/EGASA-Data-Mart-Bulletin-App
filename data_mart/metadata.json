@@ -1,5 +1,5 @@
 {
-  "fecha_ejecucion": "2025-12-29T21:33:03.579957",
+  "fecha_ejecucion": "2025-12-30T18:41:37.086064",
   "archivos_leidos": [
     {
       "nombre": "centrales_egasa.csv",
@@ -196,19 +196,15 @@
       "fecha_max": "2025-12-11T00:00:00"
     },
     "ventas_mensual_mwh": {
-      "filas": 312,
-      "alertas": [
-        "duplicados:52"
-      ],
+      "filas": 244,
+      "alertas": [],
       "fecha_min": "2024-12-01T00:00:00",
       "fecha_max": "2025-12-01T00:00:00",
       "clientes_vacios": 0
     },
     "ventas_mensual_soles": {
-      "filas": 325,
-      "alertas": [
-        "duplicados:52"
-      ],
+      "filas": 256,
+      "alertas": [],
       "fecha_min": "2024-12-01T00:00:00",
       "fecha_max": "2025-12-01T00:00:00",
       "clientes_vacios": 0
