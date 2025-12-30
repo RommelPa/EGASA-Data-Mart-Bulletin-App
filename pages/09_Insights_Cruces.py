@@ -1,11 +1,19 @@
-import streamlit as st
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np
+import streamlit as st
 
+from app.charts.theme import (
+    AxisFormat,
+    apply_exec_style,
+    apply_soft_markers,
+    apply_thin_lines,
+    apply_unified_hover,
+    format_axis_units,
+)
 from utils.data import load_csv
-from utils.filters import sidebar_periodo_selector, filter_by_periodo, ensure_periodo_str
+from utils.filters import ensure_periodo_str, filter_by_periodo, sidebar_periodo_selector
 
 st.set_page_config(layout="wide")
 st.title("🔎 Insights / Cruces")
@@ -17,11 +25,28 @@ def scatter_with_fit(df: pd.DataFrame, x: str, y: str, title: str) -> go.Figure:
     d = df[[x, y]].dropna().copy()
     fig = go.Figure()
 
-    if d.empty:
-        fig.update_layout(title=f"{title} (sin datos)")
-        return fig
+    friendly_labels = {
+        "caudal_m3s": "Caudal (m³/s)",
+        "volumen_millones_m3": "Volumen útil (millones de m³)",
+        "Volumen útil (Mm³)": "Volumen útil (millones de m³)",
+        "gen_mwh": "Generación (MWh)",
+    }
+    friendly_formats = {
+        "caudal_m3s": ",.2f",
+        "volumen_millones_m3": ",.2f",
+        "Volumen útil (Mm³)": ",.2f",
+        "gen_mwh": ",.0f",
+    }
 
-    fig.add_trace(go.Scatter(x=d[x], y=d[y], mode="markers", name="datos"))
+    if d.empty:
+        return apply_exec_style(
+            fig,
+            title=f"{title}",
+            subtitle="Sin datos para el rango seleccionado",
+            hovermode="closest",
+        )
+
+    fig.add_trace(go.Scatter(x=d[x], y=d[y], mode="markers", name="Datos"))
 
     # Fit lineal si se puede
     if d[x].nunique() >= 2:
@@ -29,12 +54,19 @@ def scatter_with_fit(df: pd.DataFrame, x: str, y: str, title: str) -> go.Figure:
             a, b = np.polyfit(d[x].astype(float).values, d[y].astype(float).values, 1)
             x_line = np.linspace(d[x].min(), d[x].max(), 50)
             y_line = a * x_line + b
-            fig.add_trace(go.Scatter(x=x_line, y=y_line, mode="lines", name="tendencia"))
+            fig.add_trace(go.Scatter(x=x_line, y=y_line, mode="lines", name="Tendencia"))
         except Exception:
             # si algo raro pasa, no bloquea el dashboard
             pass
 
-    fig.update_layout(title=title, xaxis_title=x, yaxis_title=y)
+    format_axis_units(
+        fig,
+        x=AxisFormat(title=friendly_labels.get(x, x), tickformat=friendly_formats.get(x, ",.2f")),
+        y=AxisFormat(title=friendly_labels.get(y, y), tickformat=friendly_formats.get(y, ",.2f")),
+    )
+    apply_exec_style(fig, title=title, subtitle="Relación simple", hovermode="closest")
+    apply_soft_markers(fig)
+    apply_thin_lines(fig)
     return fig
 
 
@@ -103,6 +135,7 @@ if not cau.empty and "caudal_m3s" in cau.columns:
 vol_total = pd.DataFrame(columns=["periodo", "volumen_000m3"])
 if not vol.empty and "volumen_000m3" in vol.columns:
     vol_total = vol.groupby("periodo")["volumen_000m3"].sum().reset_index()
+    vol_total["volumen_millones_m3"] = vol_total["volumen_000m3"] / 1_000
 
 base = (
     gen_total.merge(ventas_total, on="periodo", how="left")
@@ -121,6 +154,20 @@ base = filter_by_periodo(base, "periodo", p_ini, p_fin)
 st.markdown("## 1) Generación vs Ventas")
 if "ventas_mwh" in base.columns and base["ventas_mwh"].notna().any():
     fig = px.line(base, x="periodo", y=["gen_mwh", "ventas_mwh"], title="Generación vs Ventas (MWh)")
+    apply_thin_lines(fig)
+    apply_soft_markers(fig)
+    apply_unified_hover(fig, fmt=":,.0f", units="MWh")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Periodo"),
+        y=AxisFormat(title="Energía (MWh)", tickformat=",.0f"),
+    )
+    apply_exec_style(
+        fig,
+        title="Generación vs Ventas",
+        subtitle="Energía (MWh) consolidada",
+        source="EGASA · Data Mart",
+    )
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("No hay ventas para cruzar (ventas_mensual_mwh).")
@@ -139,9 +186,9 @@ if "caudal_m3s" in base.columns and base["caudal_m3s"].notna().any():
 else:
     c1.info("Sin caudal para el rango.")
 
-if "volumen_000m3" in base.columns and base["volumen_000m3"].notna().any():
+if "volumen_millones_m3" in base.columns and base["volumen_millones_m3"].notna().any():
     c2.plotly_chart(
-        scatter_with_fit(base, "volumen_000m3", "gen_mwh", "Volumen vs Generación"),
+        scatter_with_fit(base.rename(columns={"volumen_millones_m3": "Volumen útil (Mm³)"}), "Volumen útil (Mm³)", "gen_mwh", "Volumen útil vs Generación"),
         use_container_width=True,
     )
 else:
@@ -153,6 +200,20 @@ else:
 st.markdown("## 3) Precio medio mensual (S/MWh)")
 if "precio_medio" in base.columns and base["precio_medio"].notna().any():
     fig = px.line(base, x="periodo", y="precio_medio", title="Precio medio mensual (S/MWh)")
+    apply_thin_lines(fig)
+    apply_soft_markers(fig)
+    apply_unified_hover(fig, fmt=":,.2f", units="S/MWh")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Periodo"),
+        y=AxisFormat(title="Precio medio (S/MWh)", tickformat=",.2f"),
+    )
+    apply_exec_style(
+        fig,
+        title="Precio medio mensual",
+        subtitle="Soles por MWh",
+        source="EGASA · Data Mart",
+    )
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("No hay precio medio para el rango.")
