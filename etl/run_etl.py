@@ -4,44 +4,20 @@
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime
 import argparse
-import time
-
+import logging
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
+
+from etl import pipelines, config
+from etl.logging_utils import setup_logging
+from etl.utils_io import set_run_context, default_log_extra, record_etl_run, ensure_runs_log
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from etl import pipelines, config
-from etl.utils_io import set_run_context, default_log_extra, record_etl_run, ensure_runs_log
-
-
-def setup_logging(run_id: str) -> None:
-    log_file = config.LOG_FILE
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    class ContextFilter(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
-            for field in ["run_id", "stage", "file", "rows_in", "rows_out", "duration_ms"]:
-                if not hasattr(record, field):
-                    setattr(record, field, "-")
-            if not getattr(record, "run_id", None):
-                record.run_id = run_id
-            return True
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] stage=%(stage)s file=%(file)s rows_in=%(rows_in)s rows_out=%(rows_out)s duration_ms=%(duration_ms)s run_id=%(run_id)s %(name)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
-    )
-    logging.getLogger().addFilter(ContextFilter())
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,12 +45,12 @@ def main() -> None:
     set_run_context(run_id=run_id, strict=strict)
     config.ensure_directories()
     ensure_runs_log()
-    setup_logging(run_id)
+    setup_logging(config.LOG_FILE, run_id=run_id)
     logger = logging.getLogger(__name__)
-    logger.info("Iniciando ETL %s", datetime.utcnow().isoformat())
+    logger.info("Iniciando ETL %s", datetime.utcnow().isoformat(), extra=default_log_extra(stage="orchestrator", run_id=run_id))
     cfg_path = config.BASE_DIR / "config.yml"
-    logger.info("Config cargada: %s", cfg_path if cfg_path.exists() else "defaults")
-    logger.info("run_id=%s strict=%s", run_id, strict)
+    logger.info("Config cargada: %s", cfg_path if cfg_path.exists() else "defaults", extra=default_log_extra(stage="orchestrator", run_id=run_id))
+    logger.info("run_id=%s strict=%s", run_id, strict, extra=default_log_extra(stage="orchestrator", run_id=run_id))
 
     files_read = []
     datasets = {}
@@ -130,13 +106,13 @@ def main() -> None:
             files_read=files_read,
         )
 
-        logger.info("ETL finalizado.")
+        logger.info("ETL finalizado.", extra=default_log_extra(stage="orchestrator", run_id=run_id))
         finished_at = datetime.utcnow().isoformat()
         record_etl_run(run_id=run_id, started_at=started_at, finished_at=finished_at, status="success", tables=tables_rows)
     except Exception as exc:
         finished_at = datetime.utcnow().isoformat()
         suggestion = "Verifica config.yml (patrones y sheets) y la existencia de archivos en data_landing."
-        logger.error("ETL falló: %s | Sugerencia: %s", exc, suggestion, extra=default_log_extra(stage="orchestrator"))
+        logger.error("ETL falló: %s | Sugerencia: %s", exc, suggestion, extra=default_log_extra(stage="orchestrator", run_id=run_id))
         record_etl_run(run_id=run_id, started_at=started_at, finished_at=finished_at, status="failed", tables=tables_rows, error=str(exc))
         raise SystemExit(1) from exc
 
