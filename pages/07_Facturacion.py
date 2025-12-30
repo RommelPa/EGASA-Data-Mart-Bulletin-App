@@ -1,9 +1,17 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
+from app.charts.theme import (
+    AxisFormat,
+    apply_exec_style,
+    apply_soft_markers,
+    apply_thin_lines,
+    apply_unified_hover,
+    format_axis_units,
+)
 from utils.data import load_csv
-from utils.filters import sidebar_periodo_selector, filter_by_periodo, ensure_periodo_str
+from utils.filters import ensure_periodo_str, filter_by_periodo, sidebar_periodo_selector
 
 st.set_page_config(layout="wide")
 st.title("💰 Facturación / Comercial")
@@ -51,12 +59,40 @@ if not ventas_mwh_f.empty:
 
     # tendencia
     s = ventas_mwh_f.groupby("periodo")["mwh"].sum().reset_index()
-    st.plotly_chart(px.line(s, x="periodo", y="mwh", title="Ventas total mensual (MWh)"), use_container_width=True)
+    fig = px.line(s, x="periodo", y="mwh", title="Ventas total mensual (MWh)")
+    apply_thin_lines(fig)
+    apply_soft_markers(fig)
+    apply_unified_hover(fig, fmt=":,.0f", units="MWh")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Periodo"),
+        y=AxisFormat(title="Ventas (MWh)", tickformat=",.0f"),
+    )
+    apply_exec_style(
+        fig,
+        title="Ventas totales mensuales",
+        subtitle="Energía vendida (MWh)",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
     # top clientes
     top_n = st.sidebar.slider("Top N clientes", 5, 30, 10)
     top = ventas_mwh_f.groupby("cliente")["mwh"].sum().sort_values(ascending=False).head(top_n).reset_index()
-    st.plotly_chart(px.bar(top, x="cliente", y="mwh", title=f"Top {top_n} clientes (MWh)"), use_container_width=True)
+    fig_top = px.bar(top, x="cliente", y="mwh", title=f"Top {top_n} clientes (MWh)")
+    apply_unified_hover(fig_top, fmt=":,.0f", units="MWh")
+    format_axis_units(
+        fig_top,
+        x=AxisFormat(title="Cliente"),
+        y=AxisFormat(title="Ventas (MWh)", tickformat=",.0f"),
+    )
+    apply_exec_style(
+        fig_top,
+        title=f"Top {top_n} clientes por energía vendida",
+        subtitle="Ordenado por MWh acumulados",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig_top, use_container_width=True)
 else:
     st.info("No hay ventas_mensual_mwh en el rango.")
 
@@ -65,15 +101,42 @@ st.markdown("## 2) Precio medio (S/MWh)")
 if not precio_f.empty:
     # promedio mensual (promedio simple; si quieres ponderado por MWh lo hacemos luego)
     s = precio_f.groupby("periodo")["precio_medio_soles_mwh"].mean().reset_index()
-    st.plotly_chart(px.line(s, x="periodo", y="precio_medio_soles_mwh", title="Precio medio mensual (S/MWh)"),
-                    use_container_width=True)
+    fig_precio = px.line(s, x="periodo", y="precio_medio_soles_mwh", title="Precio medio mensual (S/MWh)")
+    apply_thin_lines(fig_precio)
+    apply_soft_markers(fig_precio)
+    apply_unified_hover(fig_precio, fmt=":,.2f", units="S/MWh")
+    format_axis_units(
+        fig_precio,
+        x=AxisFormat(title="Periodo"),
+        y=AxisFormat(title="Precio medio (S/MWh)", tickformat=",.2f"),
+    )
+    apply_exec_style(
+        fig_precio,
+        title="Precio medio mensual",
+        subtitle="Soles por MWh",
+        source="EGASA · Data Mart",
+    )
+    st.plotly_chart(fig_precio, use_container_width=True)
 
     # dispersión por cliente (último periodo)
     last_p = precio_f["periodo"].max()
     d = precio_f[precio_f["periodo"] == last_p].copy()
     if not d.empty:
-        st.plotly_chart(px.box(d, x="cliente", y="precio_medio_soles_mwh", title=f"Distribución por cliente ({last_p})"),
-                        use_container_width=True)
+        fig_disp = px.box(d, x="cliente", y="precio_medio_soles_mwh", title=f"Distribución por cliente ({last_p})")
+        apply_unified_hover(fig_disp, fmt=":,.2f", units="S/MWh")
+        format_axis_units(
+            fig_disp,
+            x=AxisFormat(title="Cliente"),
+            y=AxisFormat(title="Precio medio (S/MWh)", tickformat=",.2f"),
+        )
+        apply_exec_style(
+            fig_disp,
+            title=f"Distribución de precio medio — {last_p}",
+            subtitle="Precio facturado por cliente",
+            source="EGASA · Data Mart",
+            hovermode="closest",
+        )
+        st.plotly_chart(fig_disp, use_container_width=True)
 else:
     st.info("No hay precio_medio_mensual en el rango.")
 
