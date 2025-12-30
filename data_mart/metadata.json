@@ -1,5 +1,5 @@
 {
-  "fecha_ejecucion": "2025-12-29T20:17:05.665358",
+  "fecha_ejecucion": "2025-12-29T21:33:03.579957",
   "archivos_leidos": [
     {
       "nombre": "centrales_egasa.csv",
@@ -85,6 +85,11 @@
       "nombre": "Revision de Volumen Optimo de Contratos 2025-2036 - Listo.xlsx",
       "modified_time": 1766436370.0,
       "size": 13298223
+    },
+    {
+      "nombre": "balance 2025.xlsx",
+      "modified_time": 1766433592.0,
+      "size": 798053
     }
   ],
   "datasets": {
@@ -96,77 +101,77 @@
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202504": {
-      "filas": 120960,
+      "filas": 138585,
       "alertas": [],
       "fecha_min": "2025-04-01T00:00:00",
       "fecha_max": "2025-04-30T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202508": {
-      "filas": 124992,
+      "filas": 144633,
       "alertas": [],
       "fecha_min": "2025-08-01T00:00:00",
       "fecha_max": "2025-08-31T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202501": {
-      "filas": 124992,
+      "filas": 144633,
       "alertas": [],
       "fecha_min": "2025-01-01T00:00:00",
       "fecha_max": "2025-01-31T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202502": {
-      "filas": 112896,
+      "filas": 126489,
       "alertas": [],
       "fecha_min": "2025-02-01T00:00:00",
       "fecha_max": "2025-02-28T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202507": {
-      "filas": 124992,
+      "filas": 144633,
       "alertas": [],
       "fecha_min": "2025-07-01T00:00:00",
       "fecha_max": "2025-07-31T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202506": {
-      "filas": 120960,
+      "filas": 138585,
       "alertas": [],
       "fecha_min": "2025-06-01T00:00:00",
       "fecha_max": "2025-06-30T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202503": {
-      "filas": 124992,
+      "filas": 144633,
       "alertas": [],
       "fecha_min": "2025-03-01T00:00:00",
       "fecha_max": "2025-03-31T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202505": {
-      "filas": 124992,
+      "filas": 144633,
       "alertas": [],
       "fecha_min": "2025-05-01T00:00:00",
       "fecha_max": "2025-05-31T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202511": {
-      "filas": 109440,
+      "filas": 121305,
       "alertas": [],
       "fecha_min": "2025-11-01T00:00:00",
       "fecha_max": "2025-11-30T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202510": {
-      "filas": 124992,
+      "filas": 144633,
       "alertas": [],
       "fecha_min": "2025-10-01T00:00:00",
       "fecha_max": "2025-10-31T23:59:59.999000",
       "centrales_no_mapeadas": 0
     },
     "generacion_15min_202509": {
-      "filas": 120960,
+      "filas": 138585,
       "alertas": [],
       "fecha_min": "2025-09-01T00:00:00",
       "fecha_max": "2025-09-30T23:59:59.999000",
@@ -237,6 +242,18 @@
         "dataset_vacio"
       ],
       "clientes_vacios": 0
+    },
+    "balance_perfil_mensual": {
+      "filas": 1064,
+      "alertas": [],
+      "fecha_min": "2016-01-01T00:00:00",
+      "fecha_max": "2025-11-01T00:00:00"
+    },
+    "balance_r_mensual": {
+      "filas": 40,
+      "alertas": [],
+      "fecha_min": "2025-01-01T00:00:00",
+      "fecha_max": "2025-10-01T00:00:00"
     }
   }
 }

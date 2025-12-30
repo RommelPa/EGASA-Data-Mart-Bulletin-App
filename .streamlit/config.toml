@@ -1,0 +1,11 @@
+[theme]
+base="light"
+
+[server]
+headless=true
+
+[client]
+showErrorDetails=true
+
+[browser]
+gatherUsageStats=false

@@ -24,6 +24,7 @@ LANDING_FILES: Dict[str, str] = {
     "hidrologia_represas": "BDREPRESAS.xlsx",
     "facturacion": "Facturacion",
     "contratos": "Revision de Volumen Optimo",
+    "balance_energia": "balance 2025",
 }
 
 # Archivos de salida
@@ -39,6 +40,8 @@ OUTPUT_FILES: Dict[str, str] = {
     "precio_medio_mensual": "precio_medio_mensual.csv",
     "contratos_base": "contratos_base.csv",
     "contratos_riesgo": "contratos_riesgo.csv",
+    "balance_perfil_mensual": "balance_perfil_mensual.csv",
+    "balance_r_mensual": "balance_r_mensual.csv",
 }
 
 # Logging

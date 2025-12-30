@@ -55,6 +55,10 @@ def main() -> None:
     files_read.extend(contratos_files)
     datasets.update(contratos_datasets)
 
+    balance_files, balance_datasets = pipelines.run_balance_energia()
+    files_read.extend(balance_files)
+    datasets.update(balance_datasets)
+
     from etl.quality_checks import write_metadata
 
     write_metadata(
