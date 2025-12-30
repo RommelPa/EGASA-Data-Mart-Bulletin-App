@@ -1,8 +1,10 @@
 import streamlit as st
+import plotly.express as px
 
+from app.charts.theme import AxisFormat, apply_exec_style, apply_soft_markers, apply_thin_lines, format_axis_units
+from app.ui_components import kpi, line_chart, bar_chart
 from utils.data import load_csv, load_centrales, metadata_token
 from utils.filters import sidebar_periodo_selector, filter_by_periodo
-from app.ui_components import kpi, line_chart, bar_chart
 
 st.set_page_config(layout="wide")
 st.title("📌 Resumen Ejecutivo")
@@ -54,17 +56,58 @@ c1, c2 = st.columns(2)
 
 if not gen_f.empty:
     s = gen_f.groupby("periodo")["energia_mwh"].sum().reset_index()
-    line_chart(c1, s, x="periodo", y="energia_mwh", title="Generación total (MWh)")
+    line_chart(
+        c1,
+        s,
+        x="periodo",
+        y="energia_mwh",
+        title="Generación total",
+        y_label="Energía (MWh)",
+        y_format=",.0f",
+        subtitle="Producción mensual consolidada",
+    )
 
 if mix is not None and not mix.empty:
     fig = px.pie(values=mix.values, names=mix.index, title="Mix Hidro vs Térmica (último mes)")
+    fig.update_traces(textposition="inside", textinfo="percent+label", pull=[0.03] * len(mix))
+    apply_exec_style(
+        fig,
+        title="Mix Hidro vs Térmica (último mes)",
+        subtitle="Composición de generación por tecnología",
+        source="EGASA · Data Mart",
+        hovermode="closest",
+    )
     c2.plotly_chart(fig, use_container_width=True)
 
 c3, c4 = st.columns(2)
 
 if not seg_f.empty:
     s2 = seg_f.groupby(["periodo", "segmento"])["energia_mwh"].sum().reset_index()
-    bar_chart(c3, s2, x="periodo", y="energia_mwh", color="segmento", title="Ventas por segmento (MWh)")
+    bar_chart(
+        c3,
+        s2,
+        x="periodo",
+        y="energia_mwh",
+        color="segmento",
+        title="Ventas por segmento",
+        y_label="Energía (MWh)",
+        y_format=",.0f",
+        subtitle="Participación mensual por segmento",
+    )
 
 if not rep.empty and "pct_llenado" in rep.columns:
-    bar_chart(c4, rep.sort_values("pct_llenado", ascending=False), x="reservorio", y="pct_llenado", title="Estado diario represas: % llenado")
+    rep_sorted = rep.sort_values("pct_llenado", ascending=False)
+    fig = px.bar(rep_sorted, x="reservorio", y="pct_llenado", title="Estado diario represas")
+    format_axis_units(
+        fig,
+        x=AxisFormat(title="Reservorio"),
+        y=AxisFormat(title="Nivel de llenado (%)", tickformat=".1%"),
+    )
+    apply_exec_style(
+        fig,
+        title="Estado diario represas",
+        subtitle="Porcentaje de llenado reportado",
+        source="EGASA · Data Mart",
+        hovermode="x unified",
+    )
+    c4.plotly_chart(fig, use_container_width=True)
