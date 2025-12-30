@@ -12,8 +12,8 @@ from typing import Dict, Iterable, List, Tuple
 
 import pandas as pd
 
-from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES
-from ..utils_io import detect_header_row, list_matching_files, safe_write_csv
+from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES, get_source
+from ..utils_io import detect_header_row, list_matching_files, apply_table_rules, validate_and_write
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,7 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
     files_read: List[Path] = []
     datasets: Dict[str, Tuple[pd.DataFrame, Iterable[str]]] = {}
 
+    fact_cfg = get_source("facturacion")
     fact_files = list_matching_files(DATA_LANDING, LANDING_FILES["facturacion"])
     ventas_mwh = pd.DataFrame(columns=["cliente", "periodo", "mwh"])
     ventas_soles = pd.DataFrame(columns=["cliente", "periodo", "soles"])
@@ -209,22 +210,26 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
     if fact_files:
         path = fact_files[0]
         files_read.append(path)
+        sheets_cfg = (fact_cfg or {}).get("sheets", {})
+
         try:
-            ventas_mwh_sheet = _read_with_header(path, "VENTAS (MWh)", ["cliente", "enero"])
+            sheet_name = sheets_cfg.get("ventas_mwh", "VENTAS (MWh)")
+            ventas_mwh_sheet = _read_with_header(path, sheet_name, ["cliente", "enero"])
             ventas_mwh = _parse_sales(ventas_mwh_sheet, "mwh")
         except Exception:
-            logger.exception("Error procesando hoja VENTAS (MWh)")
-            raise
+            logger.exception("Error procesando hoja de ventas MWh (%s)", sheet_name)
+            raise ValueError(f"No se pudo procesar hoja de ventas MWh '{sheet_name}' en {path.name}")
 
         try:
-            ventas_soles_sheet = _read_with_header(path, "VENTAS (S)", ["cliente", "enero"])
+            sheet_name = sheets_cfg.get("ventas_soles", "VENTAS (S)")
+            ventas_soles_sheet = _read_with_header(path, sheet_name, ["cliente", "enero"])
             ventas_soles = _parse_sales(ventas_soles_sheet, "soles")
         except Exception:
-            logger.exception("Error procesando hoja VENTAS (S)")
-            raise
+            logger.exception("Error procesando hoja de ventas S (%s)", sheet_name)
+            raise ValueError(f"No se pudo procesar hoja de ventas S '{sheet_name}' en {path.name}")
 
         try:
-            ingresos_sheet_name = _find_sheet(path, "Ingresos")
+            ingresos_sheet_name = sheets_cfg.get("ingresos") or _find_sheet(path, "Ingresos")
             if ingresos_sheet_name:
                 ingresos_sheet = _read_with_header(path, ingresos_sheet_name, ["enero"])
                 ingresos = _parse_ingresos(ingresos_sheet, year=_extract_year_from_filename(path))
@@ -232,7 +237,9 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
                 logger.warning("Hoja Ingresos no encontrada en %s", path)
         except Exception:
             logger.exception("Error procesando hoja Ingresos")
-            raise
+            raise ValueError(f"No se pudo procesar hoja de Ingresos en {path.name}")
+    elif (fact_cfg or {}).get("required", True):
+        raise FileNotFoundError(f"No se encontró archivo de facturación en {DATA_LANDING}")
 
     # Calcular precio medio
     ventas_mwh_agg = _aggregate_sales(ventas_mwh, "mwh")
@@ -249,10 +256,14 @@ def run_facturacion() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterabl
             subset=["anio", "mes", "cliente"]
         )[["periodo", "anio", "mes", "cliente", "precio_medio_soles_mwh"]]
 
-    safe_write_csv(ventas_mwh, DATA_MART / OUTPUT_FILES["ventas_mensual_mwh"])
-    safe_write_csv(ventas_soles, DATA_MART / OUTPUT_FILES["ventas_mensual_soles"])
-    safe_write_csv(ingresos, DATA_MART / OUTPUT_FILES["ingresos_mensual"])
-    safe_write_csv(precio_medio, DATA_MART / OUTPUT_FILES["precio_medio_mensual"])
+    ventas_mwh = apply_table_rules("ventas_mensual_mwh", ventas_mwh)
+    ventas_soles = apply_table_rules("ventas_mensual_soles", ventas_soles)
+    ingresos = apply_table_rules("ingresos_mensual", ingresos)
+
+    validate_and_write("ventas_mensual_mwh", ventas_mwh, DATA_MART / OUTPUT_FILES["ventas_mensual_mwh"])
+    validate_and_write("ventas_mensual_soles", ventas_soles, DATA_MART / OUTPUT_FILES["ventas_mensual_soles"])
+    validate_and_write("ingresos_mensual", ingresos, DATA_MART / OUTPUT_FILES["ingresos_mensual"])
+    validate_and_write("precio_medio_mensual", precio_medio, DATA_MART / OUTPUT_FILES["precio_medio_mensual"])
 
     datasets["ventas_mensual_mwh"] = (ventas_mwh, ["cliente", "periodo"])
     datasets["ventas_mensual_soles"] = (ventas_soles, ["cliente", "periodo"])

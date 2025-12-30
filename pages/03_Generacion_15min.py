@@ -2,18 +2,19 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-from utils.data import load_generacion_15min, list_yyyymm_15min
+from utils.data import load_generacion_15min, list_yyyymm_15min, metadata_token
 
 st.set_page_config(layout="wide")
 st.title("⏱️ Generación 15-min (2025)")
 
-yyyymm_list = list_yyyymm_15min()
+meta_token = metadata_token()
+yyyymm_list = list_yyyymm_15min(meta_token=meta_token)
 if not yyyymm_list:
     st.warning("No hay archivos generacion_15min_YYYYMM.csv en data_mart.")
     st.stop()
 
 yyyymm = st.sidebar.selectbox("Selecciona YYYYMM", yyyymm_list)
-df = load_generacion_15min(yyyymm)
+df = load_generacion_15min(yyyymm, meta_token=meta_token)
 
 if df.empty:
     st.warning("No hay datos 15-min para el periodo seleccionado.")

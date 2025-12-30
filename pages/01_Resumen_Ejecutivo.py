@@ -1,17 +1,18 @@
 import streamlit as st
-import plotly.express as px
 
-from utils.data import load_csv, load_centrales
+from utils.data import load_csv, load_centrales, metadata_token
 from utils.filters import sidebar_periodo_selector, filter_by_periodo
+from app.ui_components import kpi, line_chart, bar_chart
 
 st.set_page_config(layout="wide")
 st.title("📌 Resumen Ejecutivo")
 
-gen = load_csv("generacion_mensual.csv")
-perfil = load_csv("balance_perfil_mensual.csv", parse_dates=["fecha_mes"])
-seg = load_csv("balance_r_mensual.csv", parse_dates=["fecha_mes"])
-precio = load_csv("precio_medio_mensual.csv")
-rep = load_csv("represas_diario.csv")
+meta_token = metadata_token()
+gen = load_csv("generacion_mensual.csv", meta_token=meta_token)
+perfil = load_csv("balance_perfil_mensual.csv", parse_dates=["fecha_mes"], meta_token=meta_token)
+seg = load_csv("balance_r_mensual.csv", parse_dates=["fecha_mes"], meta_token=meta_token)
+precio = load_csv("precio_medio_mensual.csv", meta_token=meta_token)
+rep = load_csv("represas_diario.csv", meta_token=meta_token)
 
 # periodos base
 from utils.filters import ensure_periodo_str
@@ -28,7 +29,7 @@ st.markdown("### 1) Indicadores clave")
 colA, colB, colC, colD = st.columns(4)
 
 mwh_mes = gen_f.groupby("periodo")["energia_mwh"].sum().iloc[-1] if not gen_f.empty else 0
-colA.metric("Generación último mes (MWh)", f"{mwh_mes:,.0f}")
+kpi(colA, "Generación último mes (MWh)", f"{mwh_mes:,.0f}")
 
 mix = None
 centrales = load_centrales()
@@ -38,13 +39,13 @@ if not centrales.empty and not gen_f.empty:
     mix = tmp[tmp["periodo"] == last_p].groupby("tipo")["energia_mwh"].sum()
     if not mix.empty:
         pct_h = (mix.get("HIDRO", 0) / mix.sum()) * 100 if mix.sum() else 0
-        colB.metric("Mix Hidro (%)", f"{pct_h:,.1f}%")
+        kpi(colB, "Mix Hidro (%)", f"{pct_h:,.1f}%")
 
 venta_total = seg_f[seg_f["segmento"].str.upper().eq("TOTAL")].groupby("periodo")["energia_mwh"].sum()
-colC.metric("Ventas último mes (MWh)", f"{(venta_total.iloc[-1] if len(venta_total) else 0):,.0f}")
+kpi(colC, "Ventas último mes (MWh)", f"{(venta_total.iloc[-1] if len(venta_total) else 0):,.0f}")
 
 if not precio_f.empty and "precio_medio_soles_mwh" in precio_f.columns:
-    colD.metric("Precio medio último mes (S/MWh)", f"{precio_f.sort_values('periodo')['precio_medio_soles_mwh'].iloc[-1]:,.2f}")
+    kpi(colD, "Precio medio último mes (S/MWh)", f"{precio_f.sort_values('periodo')['precio_medio_soles_mwh'].iloc[-1]:,.2f}")
 
 st.divider()
 st.markdown("### 2) Tendencias (últimos meses del rango)")
@@ -53,8 +54,7 @@ c1, c2 = st.columns(2)
 
 if not gen_f.empty:
     s = gen_f.groupby("periodo")["energia_mwh"].sum().reset_index()
-    fig = px.line(s, x="periodo", y="energia_mwh", title="Generación total (MWh)")
-    c1.plotly_chart(fig, use_container_width=True)
+    line_chart(c1, s, x="periodo", y="energia_mwh", title="Generación total (MWh)")
 
 if mix is not None and not mix.empty:
     fig = px.pie(values=mix.values, names=mix.index, title="Mix Hidro vs Térmica (último mes)")
@@ -64,11 +64,7 @@ c3, c4 = st.columns(2)
 
 if not seg_f.empty:
     s2 = seg_f.groupby(["periodo", "segmento"])["energia_mwh"].sum().reset_index()
-    fig = px.bar(s2, x="periodo", y="energia_mwh", color="segmento", title="Ventas por segmento (MWh)")
-    c3.plotly_chart(fig, use_container_width=True)
+    bar_chart(c3, s2, x="periodo", y="energia_mwh", color="segmento", title="Ventas por segmento (MWh)")
 
 if not rep.empty and "pct_llenado" in rep.columns:
-    fig = px.bar(rep.sort_values("pct_llenado", ascending=False), x="reservorio", y="pct_llenado",
-                 title="Estado diario represas: % llenado",)
-    c4.plotly_chart(fig, use_container_width=True)
-
+    bar_chart(c4, rep.sort_values("pct_llenado", ascending=False), x="reservorio", y="pct_llenado", title="Estado diario represas: % llenado")

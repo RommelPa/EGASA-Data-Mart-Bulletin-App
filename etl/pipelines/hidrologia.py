@@ -10,8 +10,8 @@ from typing import Dict, Iterable, List, Tuple
 
 import pandas as pd
 
-from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES
-from ..utils_io import detect_header_row, list_matching_files, safe_write_csv
+from ..config import DATA_LANDING, DATA_MART, LANDING_FILES, OUTPUT_FILES, get_source
+from ..utils_io import detect_header_row, list_matching_files, apply_table_rules, validate_and_write
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ def _extract_report_date_from_text(path: Path) -> pd.Timestamp | None:
     return best
 
 
-def _procesar_control(path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def _procesar_control(path: Path, sheet_config: Dict[str, List[str]] | None = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Procesar archivo Control Hidrológico."""
     volumen_df = pd.DataFrame(columns=["reservorio", "anio", "mes", "volumen_000m3"])
     caudal_df = pd.DataFrame(columns=["estacion", "anio", "mes", "caudal_m3s"])
@@ -184,7 +184,12 @@ def _procesar_control(path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
         logger.exception("No se pudo leer %s", path)
         raise
 
-    volumen_sheets = {"AB", "EF", "EP", "PI", "CH", "BA", "TOTAL"}
+    volumen_sheets = set(sheet_config.get("volumen", [])) if sheet_config else {"AB", "EF", "EP", "PI", "CH", "BA", "TOTAL"}
+
+    if sheet_config:
+        missing_vol = volumen_sheets - {s.upper() for s in xls.sheet_names}
+        if missing_vol == volumen_sheets:
+            raise ValueError(f"No se encontraron hojas de volumen requeridas: {sorted(volumen_sheets)}")
     vol_frames: List[pd.DataFrame] = []
 
     for sheet in xls.sheet_names:
@@ -212,8 +217,9 @@ def _procesar_control(path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
     if vol_frames:
         volumen_df = pd.concat(vol_frames, ignore_index=True)
 
-    if any(s.upper() == "CAUDAL" for s in xls.sheet_names):
-        sheet = next(s for s in xls.sheet_names if s.upper() == "CAUDAL")
+    caudal_sheet_candidates = [s for s in xls.sheet_names if s.upper() in {c.upper() for c in (sheet_config or {}).get("caudal", ["CAUDAL"])}]
+    if caudal_sheet_candidates:
+        sheet = caudal_sheet_candidates[0]
         preview = pd.read_excel(path, sheet_name=sheet, header=None, nrows=80)
         header_row = detect_header_row(preview, keywords=["año", "enero", "febrero"])
         df_cau = pd.read_excel(path, sheet_name=sheet, header=header_row)
@@ -237,13 +243,13 @@ def _normalize_colname(c: object) -> str:
     return text
 
 
-def _procesar_represas(path: Path) -> pd.DataFrame:
+def _procesar_represas(path: Path, sheet_name: str = "INFORMEDIARIO") -> pd.DataFrame:
     """Procesar BDREPRESAS (INFORMEDIARIO) a tabla limpia para dashboard."""
     try:
-        preview = pd.read_excel(path, sheet_name="INFORMEDIARIO", header=None, nrows=180)
+        preview = pd.read_excel(path, sheet_name=sheet_name, header=None, nrows=180)
     except Exception:
-        logger.exception("No se pudo abrir hoja INFORMEDIARIO en %s", path)
-        raise
+        logger.exception("No se pudo abrir hoja %s en %s", sheet_name, path)
+        raise ValueError(f"Hoja '{sheet_name}' no encontrada o ilegible en {path.name}")
 
     fecha_val = _extract_report_date_from_text(path)
 
@@ -260,7 +266,7 @@ def _procesar_represas(path: Path) -> pd.DataFrame:
     if header_row is None:
         header_row = detect_header_row(preview, keywords=["represa", "reservorio", "capacidad", "volumen"])
 
-    df = pd.read_excel(path, sheet_name="INFORMEDIARIO", header=header_row)
+    df = pd.read_excel(path, sheet_name=sheet_name, header=header_row)
     if df.empty:
         return pd.DataFrame(columns=["fecha", "reservorio"])
 
@@ -391,40 +397,56 @@ def run_hidrologia() -> Tuple[List[Path], Dict[str, Tuple[pd.DataFrame, Iterable
     datasets: Dict[str, Tuple[pd.DataFrame, Iterable[str]]] = {}
 
     # Control Hidrológico (mensual)
+    source_cfg = get_source("hidrologia_control")
     control_files = list_matching_files(DATA_LANDING, LANDING_FILES["hidrologia_control"])
     volumen_df = pd.DataFrame(columns=["reservorio", "anio", "mes", "volumen_000m3"])
     caudal_df = pd.DataFrame(columns=["estacion", "anio", "mes", "caudal_m3s"])
 
+    required = (source_cfg or {}).get("required", True)
     if control_files:
-        volumen_df, caudal_df = _procesar_control(control_files[0])
+        volumen_df, caudal_df = _procesar_control(control_files[0], sheet_config=(source_cfg or {}).get("sheets"))
         files_read.append(control_files[0])
+    elif required:
+        raise FileNotFoundError(f"No se encontró archivo de hidrología control en {DATA_LANDING}")
 
     if not volumen_df.empty:
         volumen_df["anio"] = pd.to_numeric(volumen_df["anio"], errors="coerce")
         volumen_df["mes"] = volumen_df["mes"].astype(str).str.zfill(2)
         volumen_df = volumen_df.dropna(subset=["anio", "mes"])
         volumen_df["periodo"] = volumen_df["anio"].astype(int).astype(str) + volumen_df["mes"]
+    else:
+        volumen_df["periodo"] = pd.Series(dtype=str)
 
     if not caudal_df.empty:
         caudal_df["anio"] = pd.to_numeric(caudal_df["anio"], errors="coerce")
         caudal_df["mes"] = caudal_df["mes"].astype(str).str.zfill(2)
         caudal_df = caudal_df.dropna(subset=["anio", "mes"])
         caudal_df["periodo"] = caudal_df["anio"].astype(int).astype(str) + caudal_df["mes"]
+    else:
+        caudal_df["periodo"] = pd.Series(dtype=str)
 
-    safe_write_csv(volumen_df, DATA_MART / OUTPUT_FILES["hidro_volumen_mensual"])
-    safe_write_csv(caudal_df, DATA_MART / OUTPUT_FILES["hidro_caudal_mensual"])
+    validate_and_write("hidro_volumen_mensual", volumen_df, DATA_MART / OUTPUT_FILES["hidro_volumen_mensual"])
+    validate_and_write("hidro_caudal_mensual", caudal_df, DATA_MART / OUTPUT_FILES["hidro_caudal_mensual"])
     datasets["hidro_volumen_mensual"] = (volumen_df, ["reservorio", "periodo"])
     datasets["hidro_caudal_mensual"] = (caudal_df, ["estacion", "periodo"])
 
     # BDREPRESAS (diario)
+    represas_cfg = get_source("hidrologia_represas")
     represas_files = list_matching_files(DATA_LANDING, LANDING_FILES["hidrologia_represas"])
     represas_df = pd.DataFrame(columns=["fecha", "reservorio"])
+    represas_required = (represas_cfg or {}).get("required", True)
 
     if represas_files:
-        represas_df = _procesar_represas(represas_files[0])
+        sheet = (represas_cfg or {}).get("sheet", "INFORMEDIARIO")
+        represas_df = _procesar_represas(represas_files[0], sheet_name=sheet)
         files_read.append(represas_files[0])
+    elif represas_required:
+        raise FileNotFoundError(f"No se encontró archivo de represas en {DATA_LANDING}")
+    else:
+        represas_df["periodo"] = pd.Series(dtype=str)
 
-    safe_write_csv(represas_df, DATA_MART / OUTPUT_FILES["represas_diario"])
+    represas_df = apply_table_rules("represas_diario", represas_df)
+    validate_and_write("represas_diario", represas_df, DATA_MART / OUTPUT_FILES["represas_diario"])
     datasets["represas_diario"] = (represas_df, ["fecha", "reservorio"])
 
     return files_read, datasets

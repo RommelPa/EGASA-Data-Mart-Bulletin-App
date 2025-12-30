@@ -11,9 +11,9 @@ from typing import Dict, Iterable, List, Tuple
 
 import pandas as pd
 
-from ..config import DATA_LANDING, DATA_MART, DATA_REFERENCE, LANDING_FILES, OUTPUT_FILES
+from ..config import DATA_LANDING, DATA_MART, DATA_REFERENCE, LANDING_FILES, OUTPUT_FILES, get_source
 from ..utils_cleaning import load_centrales_reference, map_central_id
-from ..utils_io import detect_header_row, list_matching_files, safe_write_csv
+from ..utils_io import detect_header_row, list_matching_files, validate_and_write, safe_write_csv
 
 logger = logging.getLogger(__name__)
 
@@ -369,17 +369,23 @@ def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataF
     files_read.append(ref_path)
 
     # Producción histórica
+    source_cfg = get_source("produccion_historica")
     historicos = list_matching_files(DATA_LANDING, LANDING_FILES["produccion_historica"])
+    if not historicos and (source_cfg.get("required", True)):
+        raise FileNotFoundError(f"No se encontró archivo histórico de producción en {DATA_LANDING}")
     historico_df = pd.DataFrame(columns=["central_id", "central", "anio", "mes", "periodo", "energia_mwh"])
     if historicos:
         historico_df = _process_historico(historicos[0], centrales_df)
         files_read.append(historicos[0])
 
-    safe_write_csv(historico_df, DATA_MART / OUTPUT_FILES["generacion_mensual"])
+    validate_and_write("generacion_mensual", historico_df, DATA_MART / OUTPUT_FILES["generacion_mensual"])
     datasets["generacion_mensual"] = (historico_df, ["central_id", "anio", "mes", "periodo"])
 
     # Producción 15min
+    src15_cfg = get_source("produccion_15min")
     archivos_15 = list_matching_files(DATA_LANDING, LANDING_FILES["produccion_15min"])
+    if not archivos_15 and src15_cfg.get("required", True):
+        raise FileNotFoundError(f"No se encontraron archivos 15min en {DATA_LANDING}")
     particiones: Dict[str, pd.DataFrame] = {}
 
     for archivo in archivos_15:
@@ -409,7 +415,7 @@ def run_produccion() -> Tuple[pd.DataFrame, List[Path], Dict[str, Tuple[pd.DataF
             else:
                 merged = pd.DataFrame(columns=df_part.columns)
 
-            safe_write_csv(merged, existing_path)
+            validate_and_write(f"generacion_15min_{periodo}", merged, existing_path)
             particiones[periodo] = merged
 
     for periodo, df_part in particiones.items():
