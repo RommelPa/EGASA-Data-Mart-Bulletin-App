@@ -5,11 +5,13 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
+import tempfile
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 import pandas as pd
-import re
 
 from .config import table_rules, REPORTS_DIR, LOGS_DIR
 from etl.schemas import get_schema
@@ -102,11 +104,45 @@ def list_matching_files(base_dir: Path, pattern: str) -> List[Path]:
     return sorted([p for p in base_dir.iterdir() if _match(p)])
 
 
-def safe_write_csv(df: pd.DataFrame, path: Path) -> int:
-    """Escribir DataFrame a CSV asegurando carpetas. Devuelve número de filas."""
+WINDOWS_INVALID_CHARS = re.compile(r'[<>:"/\\|?*]')
 
+
+def sanitize_filename(name: str) -> str:
+    """Quita caracteres inválidos y recorta espacios/puntos finales.
+
+    Pensado para compatibilidad con Windows y Linux.
+    """
+
+    cleaned = WINDOWS_INVALID_CHARS.sub("_", name)
+    cleaned = cleaned.rstrip(" .")
+    return cleaned or "_"
+
+
+def _atomic_write_csv(df: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(path, index=False, encoding="utf-8")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        delete=False,
+        dir=str(path.parent),
+        prefix=f"{path.stem}_",
+        suffix=".tmp",
+        encoding="utf-8",
+    ) as tmp:
+        df.to_csv(tmp.name, index=False, encoding="utf-8")
+        temp_path = Path(tmp.name)
+
+    os.replace(temp_path, path)
+
+
+def safe_write_csv(df: pd.DataFrame, path: Path) -> int:
+    """Escribir DataFrame a CSV de forma segura.
+
+    Usa un archivo temporal en el mismo directorio para evitar problemas de
+    rename/reemplazo en Windows.
+    """
+
+    sanitized = path.with_name(sanitize_filename(path.name))
+    _atomic_write_csv(df, sanitized)
     return len(df)
 
 
@@ -154,7 +190,8 @@ def set_run_context(run_id: str, strict: bool) -> None:
 def _write_validation_report(dataset: str, error: Exception) -> Path:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     run_id = _RUN_CONTEXT.get("run_id") or datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    report_path = REPORTS_DIR / f"validation_{run_id}_{dataset}.json"
+    safe_dataset = sanitize_filename(dataset)
+    report_path = REPORTS_DIR / f"validation_{run_id}_{safe_dataset}.json"
     payload = {"dataset": dataset, "run_id": run_id, "error": str(error)}
     try:
         import pandera.errors as pe
