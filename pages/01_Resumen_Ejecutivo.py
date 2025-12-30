@@ -1,4 +1,5 @@
 import streamlit as st
+import plotly.express as px
 
 from utils.data import load_csv, load_centrales, metadata_token
 from utils.filters import sidebar_periodo_selector, filter_by_periodo
